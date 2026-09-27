@@ -167,6 +167,7 @@ class SettingsFragment : Fragment() {
         binding.btnBatteryOptimization.setOnClickListener { requestIgnoreBatteryOptimizations() }
         binding.btnAutostart.setOnClickListener { requestAutostartPermission() }
         binding.btnCheckNow.setOnClickListener { runCheckNow() }
+        binding.btnShowChanges.setOnClickListener { findNavController().navigate(R.id.recentChangesDialogFragment) }
 
         // ── Week view: what the tile's second line shows ───────────────────────
         when (loginViewModel.sessionManager.weekViewSecondLine) {

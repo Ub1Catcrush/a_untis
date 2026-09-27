@@ -7,7 +7,10 @@
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:paddingVertical="10dp"
-    android:paddingHorizontal="12dp">
+    android:paddingHorizontal="12dp"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
 
     <ImageView
         android:id="@+id/icon_category"
@@ -34,6 +37,10 @@
             android:maxLines="2"
             android:ellipsize="end" />
 
+        <!-- Collapsed (default for anything already seen in a previous dialog open): just a
+             compact one-line summary. Expanded (default for anything new since then, and
+             toggleable by tapping any row): the full detail, unclipped. See
+             RecentChangesDialogFragment.ChangesAdapter. -->
         <TextView
             android:id="@+id/text_subtitle"
             android:layout_width="match_parent"
@@ -53,5 +60,15 @@
         android:background="@drawable/ic_circle"
         android:backgroundTint="?attr/colorPrimary"
         android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/icon_chevron"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginStart="6dp"
+        android:src="@drawable/ic_chevron_down"
+        app:tint="?attr/colorOnSurfaceVariant"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no" />
 
 </LinearLayout>

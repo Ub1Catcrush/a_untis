@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.fragment.app.DialogFragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -69,6 +70,15 @@ class RecentChangesDialogFragment : DialogFragment() {
         private val previouslyViewedAt: Long
     ) : RecyclerView.Adapter<ChangesAdapter.ViewHolder>() {
 
+        // New-since-last-view entries start open so the thing the user opened the dialog FOR
+        // is immediately readable; everything already seen before starts collapsed to a single
+        // line so a week of history doesn't turn this into a wall of text. Tapping any row
+        // toggles it either way. Tracked by position rather than a stable entry id: this
+        // adapter's input list is fixed for the dialog's lifetime (built once in
+        // onCreateDialog, never resubmitted), so positions don't shift under it.
+        private val expandedPositions = items.indices
+            .filterTo(mutableSetOf()) { items[it].timestampMs > previouslyViewedAt }
+
         inner class ViewHolder(val binding: ItemRecentChangeBinding) : RecyclerView.ViewHolder(binding.root)
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -83,11 +93,17 @@ class RecentChangesDialogFragment : DialogFragment() {
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val entry = items[position]
             val binding = holder.binding
+            val expanded = expandedPositions.contains(position)
+
             binding.textTitle.text = entry.title
+            binding.textTitle.maxLines = if (expanded) 2 else 1
             binding.textSubtitle.text = buildString {
                 append(formatTimestamp(entry.timestampMs))
                 if (entry.text.isNotBlank()) append(" · ").append(entry.text)
             }
+            binding.textSubtitle.isVisible = expanded
+            binding.iconChevron.rotation = if (expanded) 180f else 0f
+
             binding.iconCategory.setImageResource(
                 when (entry.category) {
                     "timetable" -> R.drawable.ic_calendar
@@ -99,6 +115,11 @@ class RecentChangesDialogFragment : DialogFragment() {
             )
             binding.dotUnread.visibility =
                 if (entry.timestampMs > previouslyViewedAt) View.VISIBLE else View.GONE
+
+            binding.root.setOnClickListener {
+                if (!expandedPositions.add(position)) expandedPositions.remove(position)
+                notifyItemChanged(position)
+            }
         }
 
         private fun formatTimestamp(ms: Long): String =

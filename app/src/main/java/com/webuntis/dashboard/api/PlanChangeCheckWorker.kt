@@ -140,10 +140,16 @@ class PlanChangeCheckWorker @AssistedInject constructor(
     // same real-world change look "new" again on the next check and re-notify endlessly.
     private fun lessonKey(lesson: Lesson): String = "${lesson.id}-${lesson.date}-${lesson.startTime}"
     private fun lessonState(lesson: Lesson): String = when {
-        lesson.isCancelled    -> "cancelled"
-        lesson.isSubstitution -> "subst"
-        lesson.isRoomChange   -> "roomchange"
-        else                  -> "normal"
+        lesson.isCancelled                      -> "cancelled"
+        // A genuine subject swap (e.g. "Deutsch statt Mathematik") — WebUntisRepository's
+        // lesson-merge sets replacedSubject whenever a different subject fills a cancelled
+        // slot, and *also* sets lstype="subst" for it, so this check has to come before the
+        // plain isSubstitution one below or a subject change would just be reported as an
+        // unremarkable "Vertretung: Deutsch" with no hint that the subject itself changed.
+        !lesson.replacedSubject.isNullOrBlank() -> "subjectchange"
+        lesson.isSubstitution                   -> "subst"
+        lesson.isRoomChange                     -> "roomchange"
+        else                                     -> "normal"
     }
 
     /** Only lessons in the near future are worth notifying about — a change to a lesson from
@@ -183,13 +189,18 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         toNotify.entries.forEachIndexed { i, (key, state) ->
             val lesson = bySubjectLesson[key] ?: return@forEachIndexed
             val title = when (state) {
-                "cancelled"  -> "${lesson.subjectName} fällt aus"
-                "subst"      -> "Vertretung: ${lesson.subjectName}"
-                "roomchange" -> "Raumänderung: ${lesson.subjectName}"
-                else         -> lesson.subjectName
+                "cancelled"     -> "${lesson.subjectName} fällt aus"
+                "subjectchange" -> "Fachwechsel: ${lesson.subjectName} statt ${lesson.replacedSubject}"
+                "subst"         -> "Vertretung: ${lesson.subjectName}"
+                "roomchange"    -> "Raumänderung: ${lesson.subjectName}"
+                else            -> lesson.subjectName
             }
-            val text = lesson.displayRooms(true).takeIf { it.isNotEmpty() }
-                ?.let { "Raum $it" } ?: ""
+            // The old text here was just the room, which on its own doesn't answer "which
+            // class, on what date, at what time, and what exactly changed" — the actual
+            // questions a parent has when this pops up. lesson.date/startTime/kl give the
+            // when/who; te/ro's orig* fields (populated by the v2 detail enrichment
+            // getSchoolDaysFrom already does) give the specific before → after swap.
+            val text = buildLessonChangeDetail(lesson, state)
             if (toNotify.size <= 4) {
                 notificationHelper.notifyLessonChange(i, title, text)
             }
@@ -199,6 +210,64 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         result = result.withNotified(notifiedKeys, log)
         return result
     }
+
+    /** "Di, 16.09. · 08:00–08:45 · Klasse 8c · Raum: A12 → B04" — everything needed to place a
+     *  single changed lesson without having to go find it in the timetable to check. */
+    private fun buildLessonChangeDetail(lesson: Lesson, state: String): String {
+        val parts = mutableListOf<String>()
+        parts += "${untisDateLabel(lesson.date)} · ${untisTimeLabel(lesson.startTime)}–${untisTimeLabel(lesson.endTime)}"
+        lesson.displayClasses().takeIf { it.isNotBlank() }?.let { parts += "Klasse $it" }
+
+        when (state) {
+            "roomchange" -> roomChangeLabel(lesson)?.let { parts += "Raum: $it" }
+                ?: lesson.displayRooms(false).takeIf { it.isNotBlank() }?.let { parts += "Raum $it" }
+            "subst", "subjectchange" -> {
+                teacherChangeLabel(lesson)?.let { parts += "Lehrer: $it" }
+                lesson.displayRooms(false).takeIf { it.isNotBlank() }?.let { parts += "Raum $it" }
+            }
+            "cancelled" -> lesson.displayRooms(false).takeIf { it.isNotBlank() }?.let { parts += "Raum $it" }
+        }
+        return parts.joinToString(" · ")
+    }
+
+    /** "Vorher → nachher" for the teacher(s) on a lesson, from the per-position orig/current
+     *  pair the v2 detail enrichment fills in (Lesson.te[].orgname vs .name) — falls back to
+     *  just the current name(s) if there's nothing to compare against (e.g. enrichment budget
+     *  ran out for this lesson, or it's a straightforward addition rather than a swap). */
+    private fun teacherChangeLabel(lesson: Lesson): String? {
+        val teachers = lesson.te?.takeIf { it.isNotEmpty() } ?: return null
+        val from = teachers.mapNotNull { it.orgname?.takeIf { n -> n.isNotBlank() } }
+            .distinct().joinToString(", ").takeIf { it.isNotBlank() }
+        val to = teachers.mapNotNull { it.name?.takeIf { n -> n.isNotBlank() } }
+            .distinct().joinToString(", ").takeIf { it.isNotBlank() }
+        return when {
+            from != null && to != null && from != to -> "$from → $to"
+            to != null -> to
+            else -> from
+        }
+    }
+
+    /** Same idea as [teacherChangeLabel] but for the room, from NamedItem.origName/origLongname
+     *  vs name/longname. */
+    private fun roomChangeLabel(lesson: Lesson): String? {
+        val rooms = lesson.ro?.takeIf { it.isNotEmpty() } ?: return null
+        val from = rooms.mapNotNull { it.origName?.takeIf { n -> n.isNotBlank() } }
+            .distinct().joinToString(", ").takeIf { it.isNotBlank() }
+        val to = lesson.displayRooms(false).takeIf { it.isNotBlank() }
+        return when {
+            from != null && to != null && from != to -> "$from → $to"
+            to != null -> to
+            else -> from
+        }
+    }
+
+    private fun untisDateLabel(ymd: Int): String = try {
+        val date = LocalDate.of(ymd / 10000, (ymd / 100) % 100, ymd % 100)
+        date.format(java.time.format.DateTimeFormatter.ofPattern("EEE, dd.MM.", java.util.Locale.GERMAN))
+    } catch (e: Exception) { ymd.toString() }
+
+    private fun untisTimeLabel(t: Int): String =
+        t.toString().padStart(4, '0').let { "${it.take(2)}:${it.drop(2)}" }
 
     private suspend fun checkMessages(baseline: ChangeSnapshot, isFirstRun: Boolean): ChangeSnapshot {
         val fetched = repository.getMessages(forceRefresh = true)

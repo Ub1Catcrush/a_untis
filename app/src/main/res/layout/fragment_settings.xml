@@ -657,6 +657,13 @@
                         android:layout_marginTop="4dp"
                         android:text="@string/settings_check_now_btn" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_show_changes"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_show_changes_btn" />
+
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

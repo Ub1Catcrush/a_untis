@@ -303,6 +303,7 @@
     <string name="settings_autostart_desc">On this device (Xiaomi/Redmi/POCO, Huawei/Honor, Oppo/Realme/OnePlus, Vivo, etc.) the battery exemption alone often isn\'t enough — the app also needs permission to start in the background, otherwise the background check never runs at all.</string>
     <string name="settings_autostart_failed">Couldn\'t open the autostart setting automatically. Please look for \"Autostart\" or \"Manage app launch\" for this app in your device settings.</string>
     <string name="settings_check_now_btn">Check for changes now</string>
+    <string name="settings_show_changes_btn">Show what\'s new</string>
     <string name="settings_check_now_disabled">Please enable notifications first.</string>
     <string name="settings_check_now_running">Checking…</string>
     <string name="settings_check_now_done">Check complete. A notification will show if anything changed.</string>

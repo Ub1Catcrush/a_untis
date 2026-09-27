@@ -306,6 +306,7 @@
     <string name="settings_autostart_desc">Auf diesem Gerät (Xiaomi/Redmi/POCO, Huawei/Honor, Oppo/Realme/OnePlus, Vivo o.ä.) reicht die Akku-Ausnahme allein oft nicht — die App braucht zusätzlich die Erlaubnis, im Hintergrund zu starten, sonst läuft die Hintergrundprüfung gar nicht erst an.</string>
     <string name="settings_autostart_failed">Autostart-Einstellung konnte nicht automatisch geöffnet werden. Bitte manuell in den Geräteeinstellungen nach \"Autostart\" oder \"App-Start verwalten\" für diese App suchen.</string>
     <string name="settings_check_now_btn">Jetzt auf Änderungen prüfen</string>
+    <string name="settings_show_changes_btn">Neuigkeiten anzeigen</string>
     <string name="settings_check_now_disabled">Bitte zuerst Benachrichtigungen aktivieren.</string>
     <string name="settings_check_now_running">Prüfung läuft…</string>
     <string name="settings_check_now_done">Prüfung abgeschlossen. Bei Änderungen erscheint jetzt eine Benachrichtigung.</string>
