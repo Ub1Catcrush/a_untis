@@ -97,11 +97,20 @@ class RecentChangesDialogFragment : DialogFragment() {
 
             binding.textTitle.text = entry.title
             binding.textTitle.maxLines = if (expanded) 2 else 1
-            binding.textSubtitle.text = buildString {
-                append(formatTimestamp(entry.timestampMs))
-                if (entry.text.isNotBlank()) append(" · ").append(entry.text)
+
+            // entry.text starts with the specific date/period ("Di, 30.09. · 3. Stunde
+            // (10:40–11:25) · ...") — that's exactly the "which lesson, which day" detail that
+            // must not depend on the user first discovering the row is tappable. So it stays
+            // visible even collapsed (as a single truncated line); expanding only adds the
+            // recorded-at timestamp, which is far less important than the lesson's own date.
+            binding.textSubtitle.isVisible = true
+            binding.textSubtitle.maxLines = if (expanded) 3 else 2
+            binding.textSubtitle.text = if (expanded) {
+                if (entry.text.isNotBlank()) "${entry.text}\n${formatTimestamp(entry.timestampMs)}"
+                else formatTimestamp(entry.timestampMs)
+            } else {
+                entry.text.ifBlank { formatTimestamp(entry.timestampMs) }
             }
-            binding.textSubtitle.isVisible = expanded
             binding.iconChevron.rotation = if (expanded) 180f else 0f
 
             binding.iconCategory.setImageResource(

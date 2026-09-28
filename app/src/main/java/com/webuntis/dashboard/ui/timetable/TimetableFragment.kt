@@ -17,6 +17,7 @@ import com.webuntis.dashboard.databinding.FragmentTimetableBinding
 import com.webuntis.dashboard.ui.common.setupAccountSwitcher
 import com.webuntis.dashboard.model.Lesson
 import com.webuntis.dashboard.model.UiState
+import com.webuntis.dashboard.model.periodNumberFor
 import dagger.hilt.android.AndroidEntryPoint
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
@@ -250,8 +251,13 @@ class TimetableFragment : Fragment() {
             textSubject.text = lesson.displaySubject(viewModel.showLongSubjects, viewModel.showShortSubjectInParens)
             
             // Time range from strings.xml
-            textTime.text = getString(R.string.timetable_time_range, 
-                lesson.startTimeFormatted, lesson.endTimeFormatted)
+            val period = viewModel.timegridRows.value.periodNumberFor(lesson.startTime)
+            textTime.text = if (period != null)
+                getString(R.string.timetable_time_range_with_period,
+                    lesson.startTimeFormatted, lesson.endTimeFormatted, period)
+            else
+                getString(R.string.timetable_time_range,
+                    lesson.startTimeFormatted, lesson.endTimeFormatted)
 
             // Teacher logic with strikethrough for removed ones
             val activeTeachers = lesson.displayTeachers(viewModel.showLongTeachers, viewModel.showShortTeacherInParens)
@@ -303,7 +309,10 @@ class TimetableFragment : Fragment() {
             val info = listOfNotNull(
                 lesson.replacedSubject?.let { getString(R.string.timetable_replaced_subject, it) },
                 lesson.substText?.takeIf { it.isNotBlank() },
-                lesson.info?.takeIf { it.isNotBlank() }
+                // Skip repeating this: for an EVENT-type lesson with no subject of its own,
+                // textSubject above already falls back to showing this exact text (see
+                // Lesson.subjectName) — showing it a second time here would just be noise.
+                lesson.info?.takeIf { it.isNotBlank() && it != lesson.subjectName }
             ).joinToString(" · ")
             
             if (info.isNotBlank()) {

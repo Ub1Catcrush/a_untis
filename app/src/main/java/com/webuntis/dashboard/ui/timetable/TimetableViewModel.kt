@@ -183,12 +183,18 @@ class TimetableViewModel @Inject constructor(
     val isAtDefault: Boolean get() = _anchorDate.value == null ||
         _anchorDate.value == LocalDate.now()
 
+    private val _timegridRows = MutableStateFlow<List<com.webuntis.dashboard.model.TimegridRow>>(emptyList())
+    /** Read synchronously (best-effort) by showLessonDetail() to show which period ("3.
+     *  Stunde") a lesson is, alongside its time range. */
+    val timegridRows: StateFlow<List<com.webuntis.dashboard.model.TimegridRow>> = _timegridRows
+
     init {
         loadAll()
         viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { loadAll(forceRefresh = true) } }
         // .drop(1): the StateFlow immediately replays its current value to a new collector,
         // which would otherwise trigger a redundant reload right after the loadAll() above.
         viewModelScope.launch { activeAccountManager.current.drop(1).collect { loadAll(forceRefresh = true) } }
+        viewModelScope.launch { _timegridRows.value = repository.getTimegrid(forceRefresh = false).getOrDefault(emptyList()) }
     }
 
     fun loadAll(forceRefresh: Boolean = false) {

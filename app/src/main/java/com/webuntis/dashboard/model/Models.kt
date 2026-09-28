@@ -99,7 +99,14 @@ data class Lesson(
     // TimetableV1Entry.toLesson(). Shown as a colored room highlight instead of the
     // "Substitution" badge (that badge implies someone is covering the lesson).
     val isRoomChange: Boolean get() = code == "roomchange" || lstype == "roomchange"
-    val subjectName: String get() = su?.firstOrNull()?.name ?: su?.firstOrNull()?.longname ?: "–"
+    val subjectName: String get() = su?.firstOrNull()?.name ?: su?.firstOrNull()?.longname
+        // EVENT-type entries (e.g. a workshop/assembly overriding a regular period) carry no
+        // subject at all — only an "info" position (see position2.type == "INFO" in the raw v2
+        // detail). Falling through to "–" there means an event like "Ausbildungstalk mit der
+        // IHK" showed up as a bare dash with nothing to identify it by; the info text itself is
+        // the only thing that DOES identify it, so use that before giving up.
+        ?: info?.takeIf { it.isNotBlank() }
+        ?: "–"
     val teacherNames: String get() = te?.mapNotNull { it.name }?.joinToString(", ") ?: ""
 
     /**
@@ -111,7 +118,9 @@ data class Lesson(
 
     /** Long name when available, falls back to short name — used with showLongNames setting. */
     val subjectLongName: String
-        get() = su?.firstOrNull()?.let { it.longname?.takeIf(String::isNotBlank) ?: it.name } ?: "–"
+        get() = su?.firstOrNull()?.let { it.longname?.takeIf(String::isNotBlank) ?: it.name }
+            ?: info?.takeIf { it.isNotBlank() }
+            ?: "–"
     val teacherLongNames: String
         get() = te?.mapNotNull { t ->
             (t.longname?.takeIf(String::isNotBlank) ?: t.name)
@@ -1243,3 +1252,9 @@ data class TimegridData(
 data class TimegridResponse(
     @SerializedName("data") val data: TimegridData? = null
 )
+
+/** Maps a lesson's startTime (e.g. 1040) to its period number (e.g. 3, for "3. Stunde") using
+ *  the school's timegrid — null if there's no matching row (timegrid not loaded yet, or an
+ *  event/lesson scheduled outside the normal period grid). */
+fun List<TimegridRow>.periodNumberFor(startTime: Int): Int? =
+    firstOrNull { it.startTime == startTime }?.period?.takeIf { it > 0 }

@@ -7,6 +7,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.google.gson.Gson
 import com.webuntis.dashboard.model.Lesson
+import com.webuntis.dashboard.model.periodNumberFor
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.time.LocalDate
@@ -178,6 +179,11 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         Log.i(tag, "checkTimetable: ${lessons.size} lessons fetched, ${changed.size} changed vs. last check, ${toNotify.size} not already notified in the last 7 days")
         if (toNotify.isEmpty()) return result
 
+        // Only fetched when actually needed (i.e. there's something to notify about this run)
+        // — cheap/cached already via WebUntisRepository, but no point paying for it on the
+        // far more common "nothing changed" runs.
+        val periodLookup = repository.getTimegrid(forceRefresh = false).getOrDefault(emptyList())
+
         val bySubjectLesson = lessons.associateBy { lessonKey(it) }
         val notifiedKeys = mutableListOf<String>()
         val log = mutableListOf<ChangeLogEntry>()
@@ -196,11 +202,12 @@ class PlanChangeCheckWorker @AssistedInject constructor(
                 else            -> lesson.subjectName
             }
             // The old text here was just the room, which on its own doesn't answer "which
-            // class, on what date, at what time, and what exactly changed" — the actual
-            // questions a parent has when this pops up. lesson.date/startTime/kl give the
-            // when/who; te/ro's orig* fields (populated by the v2 detail enrichment
-            // getSchoolDaysFrom already does) give the specific before → after swap.
-            val text = buildLessonChangeDetail(lesson, state)
+            // class, on what date/period, and what exactly changed" — the actual questions a
+            // parent has when this pops up. lesson.date/startTime/kl give the when/who; the
+            // timegrid turns startTime into a period number ("3. Stunde", not just a raw time);
+            // te/ro's orig* fields (populated by the v2 detail enrichment getSchoolDaysFrom
+            // already does) give the specific before → after swap.
+            val text = buildLessonChangeDetail(lesson, state, periodLookup)
             if (toNotify.size <= 4) {
                 notificationHelper.notifyLessonChange(i, title, text)
             }
@@ -211,11 +218,15 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         return result
     }
 
-    /** "Di, 16.09. · 08:00–08:45 · Klasse 8c · Raum: A12 → B04" — everything needed to place a
-     *  single changed lesson without having to go find it in the timetable to check. */
-    private fun buildLessonChangeDetail(lesson: Lesson, state: String): String {
+    /** "Di, 16.09. · 3. Stunde (08:00–08:45) · Klasse 8c · Raum: A12 → B04" — everything needed
+     *  to place a single changed lesson without having to go find it in the timetable to check
+     *  which class/day/period it even was. */
+    private fun buildLessonChangeDetail(lesson: Lesson, state: String, periodLookup: List<com.webuntis.dashboard.model.TimegridRow>): String {
         val parts = mutableListOf<String>()
-        parts += "${untisDateLabel(lesson.date)} · ${untisTimeLabel(lesson.startTime)}–${untisTimeLabel(lesson.endTime)}"
+        val period = periodLookup.periodNumberFor(lesson.startTime)
+        val timeLabel = "${untisTimeLabel(lesson.startTime)}–${untisTimeLabel(lesson.endTime)}"
+        parts += if (period != null) "${untisDateLabel(lesson.date)} · $period. Stunde ($timeLabel)"
+                 else "${untisDateLabel(lesson.date)} · $timeLabel"
         lesson.displayClasses().takeIf { it.isNotBlank() }?.let { parts += "Klasse $it" }
 
         when (state) {
@@ -319,7 +330,15 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         val now = System.currentTimeMillis()
         result = result.withNotified(
             newOnes.map { "homework:${it.id}" },
-            newOnes.map { ChangeLogEntry("homework", it.subject.orEmpty().ifBlank { "Neue Hausaufgabe" }, "", now) }
+            newOnes.map {
+                // Previously just "" — with several homework entries in the dialog at once
+                // (or a subject-less one falling back to "Neue Hausaufgabe"), there was no way
+                // to tell which is which without opening each one individually.
+                val dateLabel = it.date?.let { d -> untisDateLabel(d) }
+                val dueLabel  = it.dueDate?.takeIf { due -> due != it.date }?.let { d -> "fällig ${untisDateLabel(d)}" }
+                val text = listOfNotNull(dateLabel, dueLabel).joinToString(" · ")
+                ChangeLogEntry("homework", it.subject.orEmpty().ifBlank { "Neue Hausaufgabe" }, text, now)
+            }
         )
         return result
     }
@@ -344,7 +363,12 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         val now = System.currentTimeMillis()
         result = result.withNotified(
             newOnes.map { "classbook:${it.id}" },
-            newOnes.map { ChangeLogEntry("classbook", it.subject.orEmpty().ifBlank { "Neuer Klassenbucheintrag" }, "", now) }
+            newOnes.map {
+                // Same gap as homework above: the date is the only thing that told two
+                // same-subject entries apart, and it was never actually shown.
+                val text = it.date?.let { d -> untisDateLabel(d) } ?: ""
+                ChangeLogEntry("classbook", it.subject.orEmpty().ifBlank { "Neuer Klassenbucheintrag" }, text, now)
+            }
         )
         return result
     }
