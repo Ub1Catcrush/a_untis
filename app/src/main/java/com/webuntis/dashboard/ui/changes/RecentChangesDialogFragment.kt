@@ -38,7 +38,34 @@ class RecentChangesDialogFragment : DialogFragment() {
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val binding = DialogRecentChangesBinding.inflate(LayoutInflater.from(requireContext()))
+        val gson = Gson()
+        renderList(binding)
 
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.changes_dialog_title)
+            .setView(binding.root)
+            .setPositiveButton(R.string.changes_dialog_close, null)
+            .setNegativeButton(R.string.changes_dialog_clear, null)
+            .create()
+
+        // Set the negative button's click listener AFTER show() so it doesn't auto-dismiss —
+        // clearing the list should update the same dialog in place, not close it.
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                // Keeps notifiedAt (the 7-day dedup ledger) untouched — this only clears what
+                // the dialog itself shows, so already-notified changes don't get re-notified
+                // just because their entry in this list was cleared.
+                val snapshot = sessionManager.lastNotifiedSnapshot?.let { json -> ChangeSnapshot.parse(json, gson) }
+                if (snapshot != null) {
+                    sessionManager.lastNotifiedSnapshot = gson.toJson(snapshot.copy(recentChanges = emptyList()))
+                }
+                renderList(binding)
+            }
+        }
+        return dialog
+    }
+
+    private fun renderList(binding: DialogRecentChangesBinding) {
         val gson = Gson()
         val snapshot = sessionManager.lastNotifiedSnapshot?.let { json -> ChangeSnapshot.parse(json, gson) }
         val cutoff = System.currentTimeMillis() - ChangeSnapshot.NOTIFIED_TTL_MS
@@ -57,12 +84,6 @@ class RecentChangesDialogFragment : DialogFragment() {
         binding.recyclerChanges.adapter = ChangesAdapter(entries, previouslyViewedAt)
 
         sessionManager.changesLastViewedAt = System.currentTimeMillis()
-
-        return MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.changes_dialog_title)
-            .setView(binding.root)
-            .setPositiveButton(R.string.changes_dialog_close, null)
-            .create()
     }
 
     private class ChangesAdapter(

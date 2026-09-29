@@ -346,6 +346,7 @@
     <!-- "What's new" dialog (RecentChangesDialogFragment) -->
     <string name="changes_dialog_title">What\'s new</string>
     <string name="changes_dialog_close">Close</string>
+    <string name="changes_dialog_clear">Clear history</string>
     <string name="changes_empty">No changes in the last 7 days.</string>
 
     <string name="settings_section_data">Data &amp; Sync</string>
