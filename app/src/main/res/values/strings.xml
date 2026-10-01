@@ -327,6 +327,11 @@
     <string name="notif_timetable_summary_title">Stundenplan geändert</string>
     <string name="notif_messages_title">Neue Nachricht</string>
     <string name="notif_homework_title">Neue Hausaufgabe</string>
+    <string name="notif_message_from">Von %1$s</string>
+    <string name="notif_message_detail">%1$s · %2$s</string>
+    <string name="notif_message_line">%1$s · %2$s: %3$s</string>
+    <string name="notif_message_no_subject">(Kein Betreff)</string>
+    <string name="notif_message_unknown_sender">Unbekannt</string>
     <string name="notif_classbook_title">Neuer Klassenbucheintrag</string>
 
     <plurals name="notif_timetable_summary">

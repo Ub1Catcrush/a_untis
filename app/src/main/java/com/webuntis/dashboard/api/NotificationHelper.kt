@@ -121,17 +121,50 @@ class NotificationHelper @Inject constructor(
         notify(ID_TIMETABLE_BASE, notification)
     }
 
-    fun notifyNewMessages(count: Int, singleSubject: String?) {
-        val text = if (count == 1 && singleSubject != null) singleSubject
-        else context.resources.getQuantityString(R.plurals.notif_messages_summary, count, count)
-        val notification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+    /**
+     * New-message notification. Each message is described by sent date/time, sender and
+     * subject: a single message gets a title of its subject plus "Von <Absender> · <Datum>",
+     * several messages get a count summary and an expandable list with one line per message.
+     */
+    fun notifyNewMessages(messages: List<com.webuntis.dashboard.model.Message>) {
+        if (messages.isEmpty()) return
+        val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(context.getString(R.string.notif_messages_title))
-            .setContentText(text)
             .setAutoCancel(true)
             .setContentIntent(recentChangesIntent())
-            .build()
-        notify(ID_MESSAGES, notification)
+
+        if (messages.size == 1) {
+            val m = messages.first()
+            val subject = m.subject?.takeIf { it.isNotBlank() }
+                ?: context.getString(R.string.notif_message_no_subject)
+            val sender = m.sender?.displayName?.takeIf { it.isNotBlank() }
+                ?: context.getString(R.string.notif_message_unknown_sender)
+            val detail = listOf(
+                context.getString(R.string.notif_message_from, sender),
+                m.sentDateFormatted
+            ).filter { it.isNotBlank() }.joinToString(" · ")
+            builder.setContentTitle(context.getString(R.string.notif_messages_title))
+                .setContentText(subject)
+                .setStyle(NotificationCompat.BigTextStyle().bigText("$subject\n$detail"))
+        } else {
+            val summary = context.resources.getQuantityString(
+                R.plurals.notif_messages_summary, messages.size, messages.size
+            )
+            val inbox = NotificationCompat.InboxStyle().setSummaryText(summary)
+            messages.take(5).forEach { m ->
+                val subject = m.subject?.takeIf { it.isNotBlank() }
+                    ?: context.getString(R.string.notif_message_no_subject)
+                val sender = m.sender?.displayName?.takeIf { it.isNotBlank() }
+                    ?: context.getString(R.string.notif_message_unknown_sender)
+                inbox.addLine(
+                    context.getString(R.string.notif_message_line, m.sentDateFormatted, sender, subject)
+                )
+            }
+            builder.setContentTitle(context.getString(R.string.notif_messages_title))
+                .setContentText(summary)
+                .setStyle(inbox)
+        }
+        notify(ID_MESSAGES, builder.build())
     }
 
     fun notifyNewHomework(count: Int, singleSubject: String?) {

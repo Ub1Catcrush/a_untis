@@ -6,7 +6,9 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.google.gson.Gson
+import com.webuntis.dashboard.R
 import com.webuntis.dashboard.model.Lesson
+import com.webuntis.dashboard.model.Message
 import com.webuntis.dashboard.model.periodNumberFor
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -301,13 +303,28 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         Log.i(tag, "checkMessages: ${messages.size} fetched, ${candidates.size} candidate(s) (${if (isFirstRun) "first run: by date" else "by id-diff"}), ${newOnes.size} to notify")
         if (newOnes.isEmpty()) return result
 
-        notificationHelper.notifyNewMessages(newOnes.size, newOnes.singleOrNull()?.subject)
+        notificationHelper.notifyNewMessages(newOnes)
         val now = System.currentTimeMillis()
         result = result.withNotified(
             newOnes.map { "message:${it.id}" },
-            newOnes.map { ChangeLogEntry("messages", it.subject.orEmpty().ifBlank { "Neue Nachricht" }, "", now) }
+            newOnes.map {
+                ChangeLogEntry(
+                    "messages",
+                    it.subject.orEmpty().ifBlank { applicationContext.getString(R.string.notif_message_no_subject) },
+                    messageDetail(it),
+                    now
+                )
+            }
         )
         return result
+    }
+
+    /** "Von Mustermann, Max · 30.09.2026, 14:05 Uhr" — sender and sent date/time for the log. */
+    private fun messageDetail(message: Message): String {
+        val sender = message.sender?.displayName?.takeIf { it.isNotBlank() }
+            ?.let { applicationContext.getString(R.string.notif_message_from, it) }
+        return listOfNotNull(sender, message.sentDateFormatted.takeIf { it.isNotBlank() })
+            .joinToString(" · ")
     }
 
     private suspend fun checkHomework(baseline: ChangeSnapshot, isFirstRun: Boolean): ChangeSnapshot {
