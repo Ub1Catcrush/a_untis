@@ -380,6 +380,17 @@ class SessionManager @Inject constructor(
         get() = plainPrefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, false)
         set(value) { plainPrefs.edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, value).apply() }
 
+    /** Per-category opt-out inside the master switch above (Settings → Benachrichtigungen).
+     *  Everything defaults to ON. The same categories also exist as separate Android
+     *  notification channels (see [NotificationHelper]), so each can be muted in the system
+     *  settings as well as here. */
+    fun isNotificationCategoryEnabled(category: NotificationCategory): Boolean =
+        plainPrefs.getBoolean(KEY_NOTIF_CATEGORY_PREFIX + category.name, true)
+
+    fun setNotificationCategoryEnabled(category: NotificationCategory, enabled: Boolean) {
+        plainPrefs.edit().putBoolean(KEY_NOTIF_CATEGORY_PREFIX + category.name, enabled).apply()
+    }
+
     /**
      * Opaque JSON blob (see PlanChangeCheckWorker) capturing what was already seen/notified
      * about, so the next background check only reports genuinely NEW changes. Stored in the
@@ -521,6 +532,9 @@ class SessionManager @Inject constructor(
             addProperty("cacheTtlMinutes",    cacheTtlMinutes)
             addProperty("timetableViewMode",  timetableViewMode.name)
             addProperty("notificationsEnabled", notificationsEnabled)
+            add("notificationCategories", com.google.gson.JsonObject().apply {
+                NotificationCategory.values().forEach { addProperty(it.name, isNotificationCategoryEnabled(it)) }
+            })
             add("combinedOverlaySubjects", com.google.gson.JsonArray().apply {
                 combinedOverlaySubjects.forEach { add(it) }
             })
@@ -603,6 +617,11 @@ class SessionManager @Inject constructor(
                 notificationsEnabled = enabled
                 if (enabled) NotificationScheduler.start(context) else NotificationScheduler.stop(context)
             }
+            obj.getAsJsonObject("notificationCategories")?.let { cats ->
+                NotificationCategory.values().forEach { c ->
+                    cats.get(c.name)?.asBoolean?.let { setNotificationCategoryEnabled(c, it) }
+                }
+            }
             obj.get("weekViewSecondLine")?.asString?.let { raw ->
                 runCatching { WeekViewSecondLine.valueOf(raw) }.getOrNull()?.let { weekViewSecondLine = it }
             }
@@ -673,6 +692,7 @@ class SessionManager @Inject constructor(
         private const val KEY_TIMETABLE_VIEW_MODE    = "timetable_view_mode"
         private const val KEY_COMBINED_OVERLAY_SUBJECTS = "combined_overlay_subjects"
         private const val KEY_NOTIFICATIONS_ENABLED  = "notifications_enabled"
+        private const val KEY_NOTIF_CATEGORY_PREFIX  = "notif_category_"
         private const val KEY_LAST_NOTIFIED_SNAPSHOT = "last_notified_snapshot"
         private const val KEY_CHANGES_LAST_VIEWED_AT = "changes_last_viewed_at"
         private const val KEY_MANUALLY_UNREAD_MESSAGES = "manually_unread_messages"

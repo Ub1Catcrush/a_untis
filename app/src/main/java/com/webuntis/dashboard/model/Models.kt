@@ -929,11 +929,10 @@ data class Absence(
 }
 
 /**
- * One or more consecutive [Absence] entries sharing the same reason/status/time-of-day,
- * collapsed into a single row for the flat "Abwesenheiten" list (see AbsenceAdapter in
- * AbsencesFragment). WebUntis's attendance system frequently logs one Absence record per
- * calendar day even for what's really a single illness spanning a week — without this, that
- * shows up as five near-identical rows in a row instead of one "Mo – Fr" entry.
+ * Row model of the "Nachrichten" view of the absences screen (see AbsenceAdapter in
+ * AbsencesFragment). Currently always wraps exactly ONE [Absence] (see [toSingleClusters]) —
+ * summarising several days is only done in the "Liste" view. The multi-entry support is kept
+ * so the adapter's merged-range rendering stays intact.
  */
 data class AbsenceCluster(val entries: List<Absence>) {
     init { require(entries.isNotEmpty()) { "AbsenceCluster needs at least one entry" } }
@@ -1000,26 +999,13 @@ private fun isNextSchoolDay(prevEnd: Int?, next: Int?): Boolean {
     } catch (e: Exception) { false }
 }
 
-/** Groups consecutive, identically-reasoned/statused/timed absences into [AbsenceCluster]s,
- *  newest range first (matching the day-grouped "Liste der Abwesenheiten" view's order). */
-fun List<Absence>.clusterConsecutive(): List<AbsenceCluster> {
-    val sorted = sortedBy { it.startDate ?: 0 }
-    val clusters = mutableListOf<MutableList<Absence>>()
-    for (absence in sorted) {
-        val prev = clusters.lastOrNull()?.last()
-        val matches = prev != null &&
-            prev.reason == absence.reason &&
-            prev.text == absence.text &&
-            prev.excuseStatus == absence.excuseStatus &&
-            prev.isExcused == absence.isExcused &&
-            prev.startTime == absence.startTime &&
-            prev.endTime == absence.endTime &&
-            prev.canEdit == absence.canEdit &&
-            isNextSchoolDay(prev.endDate, absence.startDate)
-        if (matches) clusters.last().add(absence) else clusters.add(mutableListOf(absence))
-    }
-    return clusters.map { AbsenceCluster(it) }.sortedByDescending { it.entries.last().startDate ?: 0 }
-}
+/** Wraps every [Absence] in its own single-entry [AbsenceCluster], newest first.
+ *
+ *  The "Nachrichten" view of the absences screen deliberately shows each reported absence as
+ *  its own row, exactly as WebUntis lists it. Merging several days into one range is reserved
+ *  for the day-grouped "Liste" view (see [groupIntoAbsenceEntries]). */
+fun List<Absence>.toSingleClusters(): List<AbsenceCluster> =
+    sortedByDescending { it.startDate ?: 0 }.map { AbsenceCluster(listOf(it)) }
 
 // ─── ABSENCES META ────────────────────────────────────────────────────────────
 
@@ -1201,7 +1187,7 @@ fun List<AbsenceTime>.groupIntoAbsenceEntries(): List<AbsenceListEntry> {
  * Merges [FullDayRange]s from *different* absenceIds when they're actually the same absence
  * reported one day at a time — WebUntis assigns a fresh absenceId per day in that case (see
  * groupIntoAbsenceEntries above, which otherwise only merges full days sharing one absenceId).
- * Mirrors [clusterConsecutive]'s merge criteria: same reason/status/excused and no gap other
+ * Uses the same merge criteria the old message-view clustering had: same reason/status/excused and no gap other
  * than a weekend ([isNextSchoolDay]) between one range's end and the next's start.
  */
 private fun mergeAdjacentFullDayRanges(

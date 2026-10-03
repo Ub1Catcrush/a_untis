@@ -301,6 +301,16 @@
     <string name="settings_notifications_enabled">Bei Planänderungen benachrichtigen</string>
     <string name="settings_notifications_enabled_desc">Prüft regelmäßig im Hintergrund auf Ausfälle, Vertretungen, Raumänderungen, neue Nachrichten, Hausaufgaben und Klassenbucheinträge.</string>
     <string name="settings_notifications_permission_denied">Ohne Benachrichtigungs-Berechtigung kann diese Funktion keine Hinweise anzeigen.</string>
+    <string name="settings_notifications_categories_title">Benachrichtigen über</string>
+    <string name="settings_notif_cancellations">Ausfälle</string>
+    <string name="settings_notif_substitutions">Vertretungen &amp; Fachwechsel</string>
+    <string name="settings_notif_room_changes">Raumänderungen</string>
+    <string name="settings_notif_messages">Neue Nachrichten</string>
+    <string name="settings_notif_homework">Neue Hausaufgaben</string>
+    <string name="settings_notif_classbook">Neue Klassenbucheinträge</string>
+    <string name="settings_notifications_system_btn">Kanäle in den Systemeinstellungen</string>
+    <string name="settings_notifications_system_desc">Jede Kategorie ist auch ein eigener Android-Benachrichtigungskanal und kann dort getrennt stumm geschaltet oder angepasst werden.</string>
+    <string name="settings_notifications_system_failed">Systemeinstellungen konnten nicht geöffnet werden.</string>
     <string name="settings_battery_optimization_btn">Akku-Optimierung deaktivieren</string>
     <string name="settings_battery_optimization_desc">Ohne diese Ausnahme beendet das System die Hintergrundprüfung auf vielen Geräten (v.a. Samsung, Xiaomi) vorzeitig, sodass keine Benachrichtigungen ankommen.</string>
     <string name="settings_battery_optimization_failed">Einstellung konnte nicht geöffnet werden. Bitte manuell in den Akku-Einstellungen des Geräts für diese App die Optimierung deaktivieren.</string>
@@ -315,16 +325,22 @@
     <string name="settings_check_now_failed">Prüfung fehlgeschlagen. Bitte Logcat (Tag \"PlanChangeCheckWorker\"/\"WebUntis\") prüfen.</string>
 
     <!-- Background change-check notifications (see PlanChangeCheckWorker) -->
-    <string name="notif_channel_timetable">Stundenplanänderungen</string>
-    <string name="notif_channel_timetable_desc">Ausfälle, Vertretungen und Raumänderungen</string>
+    <string name="notif_group_timetable">Stundenplan</string>
+    <string name="notif_channel_cancellations">Ausfälle</string>
+    <string name="notif_channel_cancellations_desc">Entfallende Stunden</string>
+    <string name="notif_channel_substitutions">Vertretungen</string>
+    <string name="notif_channel_substitutions_desc">Vertretungen und Fachwechsel</string>
+    <string name="notif_channel_room_changes">Raumänderungen</string>
+    <string name="notif_channel_room_changes_desc">Geänderte Räume</string>
+    <string name="notif_cancellations_summary_title">Stunden fallen aus</string>
+    <string name="notif_substitutions_summary_title">Vertretungen</string>
+    <string name="notif_room_changes_summary_title">Raumänderungen</string>
     <string name="notif_channel_messages">Neue Nachrichten</string>
     <string name="notif_channel_messages_desc">Neue Nachrichten im Postfach</string>
     <string name="notif_channel_homework">Neue Hausaufgaben</string>
     <string name="notif_channel_homework_desc">Neu eingetragene Hausaufgaben</string>
     <string name="notif_channel_classbook">Neue Klassenbucheinträge</string>
     <string name="notif_channel_classbook_desc">Neue Einträge im Klassenbuch</string>
-
-    <string name="notif_timetable_summary_title">Stundenplan geändert</string>
     <string name="notif_messages_title">Neue Nachricht</string>
     <string name="notif_homework_title">Neue Hausaufgabe</string>
     <string name="notif_message_from">Von %1$s</string>
@@ -333,10 +349,17 @@
     <string name="notif_message_no_subject">(Kein Betreff)</string>
     <string name="notif_message_unknown_sender">Unbekannt</string>
     <string name="notif_classbook_title">Neuer Klassenbucheintrag</string>
-
-    <plurals name="notif_timetable_summary">
-        <item quantity="one">%d Stunde geändert – im Stundenplan ansehen</item>
-        <item quantity="other">%d Stunden geändert – im Stundenplan ansehen</item>
+    <plurals name="notif_cancellations_summary">
+        <item quantity="one">%d Stunde fällt aus – im Stundenplan ansehen</item>
+        <item quantity="other">%d Stunden fallen aus – im Stundenplan ansehen</item>
+    </plurals>
+    <plurals name="notif_substitutions_summary">
+        <item quantity="one">%d Vertretung – im Stundenplan ansehen</item>
+        <item quantity="other">%d Vertretungen – im Stundenplan ansehen</item>
+    </plurals>
+    <plurals name="notif_room_changes_summary">
+        <item quantity="one">%d Raumänderung – im Stundenplan ansehen</item>
+        <item quantity="other">%d Raumänderungen – im Stundenplan ansehen</item>
     </plurals>
     <plurals name="notif_messages_summary">
         <item quantity="one">%d neue Nachricht</item>

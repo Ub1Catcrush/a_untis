@@ -11,6 +11,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.webuntis.dashboard.BuildConfig
 import com.webuntis.dashboard.R
+import com.webuntis.dashboard.api.NotificationCategory
 import com.webuntis.dashboard.api.SessionManager
 import com.webuntis.dashboard.api.UpdateManager
 import com.webuntis.dashboard.databinding.FragmentSettingsBinding
@@ -42,6 +43,7 @@ class SettingsFragment : Fragment() {
             loginViewModel.sessionManager.notificationsEnabled = true
             com.webuntis.dashboard.api.NotificationScheduler.start(requireContext())
             updateBatteryOptimizationUi()
+            updateNotificationCategoriesEnabled()
         } else {
             // Permission denied — leave the feature off and reflect that in the switch so
             // it doesn't silently claim to be enabled while no notification can ever show.
@@ -81,6 +83,7 @@ class SettingsFragment : Fragment() {
                         loginViewModel.login(session.server, session.schoolname, creds.first, creds.second)
                     }
                     bindCurrentValues()
+                    bindNotificationCategories()
                     if (result.secondUpdated) renderAdditionalAccountsList()
                 }
                 is com.webuntis.dashboard.api.SessionManager.ImportResult.Error ->
@@ -145,6 +148,7 @@ class SettingsFragment : Fragment() {
             if (!checked) {
                 loginViewModel.sessionManager.notificationsEnabled = false
                 com.webuntis.dashboard.api.NotificationScheduler.stop(requireContext())
+                updateNotificationCategoriesEnabled()
                 return@setOnCheckedChangeListener
             }
             // Android 13+ requires the runtime POST_NOTIFICATIONS permission before any
@@ -161,8 +165,11 @@ class SettingsFragment : Fragment() {
                 loginViewModel.sessionManager.notificationsEnabled = true
                 com.webuntis.dashboard.api.NotificationScheduler.start(requireContext())
                 updateBatteryOptimizationUi()
+                updateNotificationCategoriesEnabled()
             }
         }
+        bindNotificationCategories()
+        binding.btnNotificationChannels.setOnClickListener { openSystemNotificationSettings() }
         updateBatteryOptimizationUi()
         binding.btnBatteryOptimization.setOnClickListener { requestIgnoreBatteryOptimizations() }
         binding.btnAutostart.setOnClickListener { requestAutostartPermission() }
@@ -347,6 +354,44 @@ class SettingsFragment : Fragment() {
                     }
                 }
             }
+        }
+    }
+
+    /** One switch per [NotificationCategory]; each mirrors an Android notification channel. */
+    private fun notificationCategorySwitches() = listOf(
+        NotificationCategory.CANCELLATIONS to binding.switchNotifCancellations,
+        NotificationCategory.SUBSTITUTIONS to binding.switchNotifSubstitutions,
+        NotificationCategory.ROOM_CHANGES  to binding.switchNotifRoomChanges,
+        NotificationCategory.MESSAGES      to binding.switchNotifMessages,
+        NotificationCategory.HOMEWORK      to binding.switchNotifHomework,
+        NotificationCategory.CLASSBOOK     to binding.switchNotifClassbook
+    )
+
+    private fun bindNotificationCategories() {
+        notificationCategorySwitches().forEach { (category, toggle) ->
+            toggle.setOnCheckedChangeListener(null)
+            toggle.isChecked = loginViewModel.sessionManager.isNotificationCategoryEnabled(category)
+            toggle.setOnCheckedChangeListener { _, checked ->
+                loginViewModel.sessionManager.setNotificationCategoryEnabled(category, checked)
+            }
+        }
+        updateNotificationCategoriesEnabled()
+    }
+
+    /** The per-category switches only make sense while the master switch is on. */
+    private fun updateNotificationCategoriesEnabled() {
+        val enabled = loginViewModel.sessionManager.notificationsEnabled
+        notificationCategorySwitches().forEach { (_, toggle) -> toggle.isEnabled = enabled }
+    }
+
+    /** Opens Android's own per-channel notification settings for this app. */
+    private fun openSystemNotificationSettings() {
+        try {
+            startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
+            })
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(requireContext(), getString(R.string.settings_notifications_system_failed), android.widget.Toast.LENGTH_LONG).show()
         }
     }
 

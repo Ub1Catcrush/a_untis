@@ -155,6 +155,13 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         else                                     -> "normal"
     }
 
+    /** Which notification category (channel + in-app switch) a [lessonState] belongs to. */
+    private fun categoryFor(state: String): NotificationCategory = when (state) {
+        "cancelled"                 -> NotificationCategory.CANCELLATIONS
+        "subst", "subjectchange"    -> NotificationCategory.SUBSTITUTIONS
+        else                        -> NotificationCategory.ROOM_CHANGES
+    }
+
     /** Only lessons in the near future are worth notifying about — a change to a lesson from
      *  last week (e.g. re-fetched while backfilling enrichment) shouldn't resurface. */
     private suspend fun checkTimetable(baseline: ChangeSnapshot, notify: Boolean): ChangeSnapshot {
@@ -172,13 +179,17 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         var result = baseline.copy(lessonStatus = current)
         if (!notify) return result
 
+        // Categories switched off in the app's settings are skipped entirely. The baseline
+        // (`result.lessonStatus` above) is still updated, so enabling a category later doesn't
+        // suddenly replay changes that happened while it was off.
         val changed = current.filter { (key, state) ->
-            state != "normal" && baseline.lessonStatus[key] != state
+            state != "normal" && baseline.lessonStatus[key] != state &&
+                sessionManager.isNotificationCategoryEnabled(categoryFor(state))
         }
         // Gate on the 7-day dedup ledger too: a key we already notified about recently is
         // skipped even if it looks "changed" against the (possibly stale/partial) state map.
         val toNotify = changed.filterKeys { key -> baseline.isFresh("timetable:$key") }
-        Log.i(tag, "checkTimetable: ${lessons.size} lessons fetched, ${changed.size} changed vs. last check, ${toNotify.size} not already notified in the last 7 days")
+        Log.i(tag, "checkTimetable: ${lessons.size} lessons fetched, ${changed.size} changed vs. last check (enabled categories only), ${toNotify.size} not already notified in the last 7 days")
         if (toNotify.isEmpty()) return result
 
         // Only fetched when actually needed (i.e. there's something to notify about this run)
@@ -191,11 +202,16 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         val log = mutableListOf<ChangeLogEntry>()
         val now = System.currentTimeMillis()
 
-        if (toNotify.size > 4) {
-            notificationHelper.notifyLessonChangesSummary(toNotify.size)
+        // Summary-vs-individual is decided per category: each category has its own channel,
+        // so a burst of cancellations must not swallow a single room change (or vice versa).
+        val countByCategory = toNotify.values.groupingBy { categoryFor(it) }.eachCount()
+        countByCategory.forEach { (category, count) ->
+            if (count > 4) notificationHelper.notifyLessonChangesSummary(category, count)
         }
-        toNotify.entries.forEachIndexed { i, (key, state) ->
-            val lesson = bySubjectLesson[key] ?: return@forEachIndexed
+        val offsetByCategory = mutableMapOf<NotificationCategory, Int>()
+        toNotify.entries.forEach { (key, state) ->
+            val lesson = bySubjectLesson[key] ?: return@forEach
+            val category = categoryFor(state)
             val title = when (state) {
                 "cancelled"     -> "${lesson.subjectName} fällt aus"
                 "subjectchange" -> "Fachwechsel: ${lesson.subjectName} statt ${lesson.replacedSubject}"
@@ -210,8 +226,10 @@ class PlanChangeCheckWorker @AssistedInject constructor(
             // te/ro's orig* fields (populated by the v2 detail enrichment getSchoolDaysFrom
             // already does) give the specific before → after swap.
             val text = buildLessonChangeDetail(lesson, state, periodLookup)
-            if (toNotify.size <= 4) {
-                notificationHelper.notifyLessonChange(i, title, text)
+            if ((countByCategory[category] ?: 0) <= 4) {
+                val offset = offsetByCategory[category] ?: 0
+                offsetByCategory[category] = offset + 1
+                notificationHelper.notifyLessonChange(category, offset, title, text)
             }
             notifiedKeys += "timetable:$key"
             log += ChangeLogEntry("timetable", title, text, now)
@@ -301,7 +319,9 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         }
         val newOnes = candidates.filter { baseline.isFresh("message:${it.id}") }
         Log.i(tag, "checkMessages: ${messages.size} fetched, ${candidates.size} candidate(s) (${if (isFirstRun) "first run: by date" else "by id-diff"}), ${newOnes.size} to notify")
-        if (newOnes.isEmpty()) return result
+        // Category off in the app's settings: baseline above is already advanced, so nothing
+        // from the off period resurfaces when it's switched back on.
+        if (newOnes.isEmpty() || !sessionManager.isNotificationCategoryEnabled(NotificationCategory.MESSAGES)) return result
 
         notificationHelper.notifyNewMessages(newOnes)
         val now = System.currentTimeMillis()
@@ -341,7 +361,7 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         else homework.filter { it.id !in baseline.homeworkIds }
         val newOnes = candidates.filter { baseline.isFresh("homework:${it.id}") }
         Log.i(tag, "checkHomework: ${homework.size} fetched, ${candidates.size} candidate(s) (${if (isFirstRun) "first run: by date" else "by id-diff"}), ${newOnes.size} to notify")
-        if (newOnes.isEmpty()) return result
+        if (newOnes.isEmpty() || !sessionManager.isNotificationCategoryEnabled(NotificationCategory.HOMEWORK)) return result
 
         notificationHelper.notifyNewHomework(newOnes.size, newOnes.singleOrNull()?.subject)
         val now = System.currentTimeMillis()
@@ -374,7 +394,7 @@ class PlanChangeCheckWorker @AssistedInject constructor(
         else entries.filter { it.id !in baseline.classbookIds }
         val newOnes = candidates.filter { baseline.isFresh("classbook:${it.id}") }
         Log.i(tag, "checkClassbook: ${entries.size} fetched, ${candidates.size} candidate(s) (${if (isFirstRun) "first run: by date" else "by id-diff"}), ${newOnes.size} to notify")
-        if (newOnes.isEmpty()) return result
+        if (newOnes.isEmpty() || !sessionManager.isNotificationCategoryEnabled(NotificationCategory.CLASSBOOK)) return result
 
         notificationHelper.notifyNewClassbookEntries(newOnes.size, newOnes.singleOrNull()?.subject)
         val now = System.currentTimeMillis()

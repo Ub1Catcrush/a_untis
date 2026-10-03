@@ -30,7 +30,7 @@ import com.webuntis.dashboard.model.Absence
 import com.webuntis.dashboard.model.AbsenceCluster
 import com.webuntis.dashboard.model.AbsenceListEntry
 import com.webuntis.dashboard.model.UiState
-import com.webuntis.dashboard.model.clusterConsecutive
+import com.webuntis.dashboard.model.toSingleClusters
 import com.webuntis.dashboard.model.untisDateLabel
 import com.webuntis.dashboard.ui.common.setupAccountSwitcher
 import dagger.hilt.android.AndroidEntryPoint
@@ -146,7 +146,7 @@ class AbsencesFragment : Fragment() {
                 } else {
                     binding.recyclerView.isVisible = true
                     binding.emptyView.isVisible = false
-                    adapter.submitList(state.data.clusterConsecutive())
+                    adapter.submitList(state.data.toSingleClusters())
                 }
             }
             is UiState.Error -> {

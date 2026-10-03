@@ -1,4 +1,4 @@
-# Project Context: WebUntis Dashboard
+# Project Context: A*Untis
 
 ## Overview
 Native Android application (Kotlin) for student/parent WebUntis dashboards.
@@ -34,5 +34,14 @@ Native Android application (Kotlin) for student/parent WebUntis dashboards.
 - `NetworkModule`: Configures OkHttpClient with a custom `CookieJar` and `jsonSanitizer` to handle WebUntis session expiry (HTML-to-JSON conversion).
 
 ## Current Status
-- **Version:** v0.0.12 (defined in `dependencies.gradle`).
-- **Target SDK:** 35 (Android 15).
+- **Version:** v0.5.5 (defined in `dependencies.gradle`).
+- **Target SDK:** 36 (Android 16).
+
+## Notifications (PlanChangeCheckWorker / NotificationHelper)
+- Six independent categories (`NotificationCategory`): cancellations, substitutions (incl. subject change), room changes, messages, homework, classbook. Each is its OWN Android notification channel (timetable ones grouped) AND has its own switch in Settings (`SessionManager.isNotificationCategoryEnabled`, default on, part of settings export/import). Master switch `notificationsEnabled` still gates the whole worker.
+- A disabled category never notifies or logs to "Neuigkeiten", but the worker still advances its baseline so re-enabling doesn't replay old items.
+- Summary notification (>4 items) is decided per category/channel, never across categories.
+- Old channel `channel_timetable_changes` is deleted in `ensureChannels()`.
+
+## Absences screen
+- "Nachrichten" view: every absence is shown individually (`toSingleClusters`). Merging consecutive days/ranges happens ONLY in the "Liste" view (`groupIntoAbsenceEntries`).

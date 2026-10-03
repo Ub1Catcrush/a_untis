@@ -1,6 +1,7 @@
 package com.webuntis.dashboard.api
 
 import android.app.NotificationChannel
+import android.app.NotificationChannelGroup
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -15,37 +16,73 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** The independently switchable notification categories. Each one maps to its own Android
+ *  notification channel (system settings) AND its own switch in the app's settings. */
+enum class NotificationCategory { CANCELLATIONS, SUBSTITUTIONS, ROOM_CHANGES, MESSAGES, HOMEWORK, CLASSBOOK }
+
 /**
- * Posts the local notifications shown by [PlanChangeCheckWorker] (schedule changes, new
- * messages, new homework, new classbook entries). One channel per category so the user can
- * mute/tune each kind individually in the system settings, plus a fallback/default channel.
+ * Posts the local notifications shown by [PlanChangeCheckWorker] (cancellations,
+ * substitutions, room changes, new messages, new homework, new classbook entries). One channel
+ * per [NotificationCategory] so the user can mute/tune each kind individually in the system
+ * settings; the app's own settings offer the same switches.
  */
 @Singleton
 class NotificationHelper @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     companion object {
-        const val CHANNEL_TIMETABLE = "channel_timetable_changes"
-        const val CHANNEL_MESSAGES  = "channel_new_messages"
-        const val CHANNEL_HOMEWORK  = "channel_new_homework"
-        const val CHANNEL_CLASSBOOK = "channel_new_classbook"
+        const val CHANNEL_CANCELLATIONS = "channel_timetable_cancellations"
+        const val CHANNEL_SUBSTITUTIONS = "channel_timetable_substitutions"
+        const val CHANNEL_ROOM_CHANGES  = "channel_timetable_room_changes"
+        const val CHANNEL_MESSAGES      = "channel_new_messages"
+        const val CHANNEL_HOMEWORK      = "channel_new_homework"
+        const val CHANNEL_CLASSBOOK     = "channel_new_classbook"
+        private const val GROUP_TIMETABLE = "group_timetable"
 
-        private const val ID_TIMETABLE_BASE = 10_000
-        private const val ID_MESSAGES       = 20_000
-        private const val ID_HOMEWORK       = 20_001
-        private const val ID_CLASSBOOK      = 20_002
+        /** Pre-split channel that held every timetable change; removed in [ensureChannels]. */
+        private const val CHANNEL_TIMETABLE_LEGACY = "channel_timetable_changes"
+
+        private const val ID_CANCELLATIONS = 10_000
+        private const val ID_SUBSTITUTIONS = 11_000
+        private const val ID_ROOM_CHANGES  = 12_000
+        private const val ID_MESSAGES      = 20_000
+        private const val ID_HOMEWORK      = 20_001
+        private const val ID_CLASSBOOK     = 20_002
     }
 
     fun ensureChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.deleteNotificationChannel(CHANNEL_TIMETABLE_LEGACY)
+        manager.createNotificationChannelGroup(
+            NotificationChannelGroup(GROUP_TIMETABLE, context.getString(R.string.notif_group_timetable))
+        )
         manager.createNotificationChannels(
             listOf(
                 NotificationChannel(
-                    CHANNEL_TIMETABLE,
-                    context.getString(R.string.notif_channel_timetable),
+                    CHANNEL_CANCELLATIONS,
+                    context.getString(R.string.notif_channel_cancellations),
                     NotificationManager.IMPORTANCE_DEFAULT
-                ).apply { description = context.getString(R.string.notif_channel_timetable_desc) },
+                ).apply {
+                    description = context.getString(R.string.notif_channel_cancellations_desc)
+                    group = GROUP_TIMETABLE
+                },
+                NotificationChannel(
+                    CHANNEL_SUBSTITUTIONS,
+                    context.getString(R.string.notif_channel_substitutions),
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = context.getString(R.string.notif_channel_substitutions_desc)
+                    group = GROUP_TIMETABLE
+                },
+                NotificationChannel(
+                    CHANNEL_ROOM_CHANGES,
+                    context.getString(R.string.notif_channel_room_changes),
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = context.getString(R.string.notif_channel_room_changes_desc)
+                    group = GROUP_TIMETABLE
+                },
                 NotificationChannel(
                     CHANNEL_MESSAGES,
                     context.getString(R.string.notif_channel_messages),
@@ -94,9 +131,24 @@ class NotificationHelper @Inject constructor(
         }
     }
 
-    /** One notification per changed lesson (cancelled / substitution / room change). */
-    fun notifyLessonChange(offset: Int, title: String, text: String) {
-        val notification = NotificationCompat.Builder(context, CHANNEL_TIMETABLE)
+    private fun channelFor(category: NotificationCategory) = when (category) {
+        NotificationCategory.CANCELLATIONS -> CHANNEL_CANCELLATIONS
+        NotificationCategory.SUBSTITUTIONS -> CHANNEL_SUBSTITUTIONS
+        NotificationCategory.ROOM_CHANGES  -> CHANNEL_ROOM_CHANGES
+        else -> error("Not a timetable category: $category")
+    }
+
+    private fun idBaseFor(category: NotificationCategory) = when (category) {
+        NotificationCategory.CANCELLATIONS -> ID_CANCELLATIONS
+        NotificationCategory.SUBSTITUTIONS -> ID_SUBSTITUTIONS
+        NotificationCategory.ROOM_CHANGES  -> ID_ROOM_CHANGES
+        else -> error("Not a timetable category: $category")
+    }
+
+    /** One notification per changed lesson, posted on the channel of its [category]
+     *  (cancellation / substitution / room change). */
+    fun notifyLessonChange(category: NotificationCategory, offset: Int, title: String, text: String) {
+        val notification = NotificationCompat.Builder(context, channelFor(category))
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(text)
@@ -104,21 +156,27 @@ class NotificationHelper @Inject constructor(
             .setAutoCancel(true)
             .setContentIntent(recentChangesIntent())
             .build()
-        notify(ID_TIMETABLE_BASE + offset, notification)
+        // +1: the base id itself is reserved for the category's summary notification.
+        notify(idBaseFor(category) + 1 + offset, notification)
     }
 
-    /** Collapsed summary used instead of per-item notifications when many lessons changed at
-     *  once (e.g. a whole day reorganized) — avoids flooding the notification shade. */
-    fun notifyLessonChangesSummary(count: Int) {
-        val text = context.resources.getQuantityString(R.plurals.notif_timetable_summary, count, count)
-        val notification = NotificationCompat.Builder(context, CHANNEL_TIMETABLE)
+    /** Collapsed per-[category] summary used instead of per-item notifications when many
+     *  lessons of that kind changed at once (e.g. a whole day reorganized) — avoids flooding
+     *  the notification shade. */
+    fun notifyLessonChangesSummary(category: NotificationCategory, count: Int) {
+        val (titleRes, pluralRes) = when (category) {
+            NotificationCategory.CANCELLATIONS -> R.string.notif_cancellations_summary_title to R.plurals.notif_cancellations_summary
+            NotificationCategory.SUBSTITUTIONS -> R.string.notif_substitutions_summary_title to R.plurals.notif_substitutions_summary
+            else                               -> R.string.notif_room_changes_summary_title  to R.plurals.notif_room_changes_summary
+        }
+        val notification = NotificationCompat.Builder(context, channelFor(category))
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(context.getString(R.string.notif_timetable_summary_title))
-            .setContentText(text)
+            .setContentTitle(context.getString(titleRes))
+            .setContentText(context.resources.getQuantityString(pluralRes, count, count))
             .setAutoCancel(true)
             .setContentIntent(recentChangesIntent())
             .build()
-        notify(ID_TIMETABLE_BASE, notification)
+        notify(idBaseFor(category), notification)
     }
 
     /**

@@ -298,6 +298,16 @@
     <string name="settings_notifications_enabled">Notify me about schedule changes</string>
     <string name="settings_notifications_enabled_desc">Periodically checks in the background for cancellations, substitutions, room changes, new messages, homework, and classbook entries.</string>
     <string name="settings_notifications_permission_denied">Without notification permission, this feature can\'t show any alerts.</string>
+    <string name="settings_notifications_categories_title">Notify me about</string>
+    <string name="settings_notif_cancellations">Cancellations</string>
+    <string name="settings_notif_substitutions">Substitutions &amp; subject changes</string>
+    <string name="settings_notif_room_changes">Room changes</string>
+    <string name="settings_notif_messages">New messages</string>
+    <string name="settings_notif_homework">New homework</string>
+    <string name="settings_notif_classbook">New classbook entries</string>
+    <string name="settings_notifications_system_btn">Channels in system settings</string>
+    <string name="settings_notifications_system_desc">Each category is also its own Android notification channel and can be muted or tuned separately there.</string>
+    <string name="settings_notifications_system_failed">Couldn\'t open the system settings.</string>
     <string name="settings_battery_optimization_btn">Disable battery optimization</string>
     <string name="settings_battery_optimization_desc">Without this exemption, the system kills the background check early on many devices (especially Samsung, Xiaomi), so no notifications arrive.</string>
     <string name="settings_battery_optimization_failed">Couldn\'t open the setting. Please disable battery optimization for this app manually in your device\'s battery settings.</string>
@@ -312,16 +322,22 @@
     <string name="settings_check_now_failed">Check failed. Please check Logcat (tag \"PlanChangeCheckWorker\"/\"WebUntis\").</string>
 
     <!-- Background change-check notifications (see PlanChangeCheckWorker) -->
-    <string name="notif_channel_timetable">Schedule changes</string>
-    <string name="notif_channel_timetable_desc">Cancellations, substitutions, and room changes</string>
+    <string name="notif_group_timetable">Timetable</string>
+    <string name="notif_channel_cancellations">Cancellations</string>
+    <string name="notif_channel_cancellations_desc">Lessons that are cancelled</string>
+    <string name="notif_channel_substitutions">Substitutions</string>
+    <string name="notif_channel_substitutions_desc">Substitutions and subject changes</string>
+    <string name="notif_channel_room_changes">Room changes</string>
+    <string name="notif_channel_room_changes_desc">Changed rooms</string>
+    <string name="notif_cancellations_summary_title">Lessons cancelled</string>
+    <string name="notif_substitutions_summary_title">Substitutions</string>
+    <string name="notif_room_changes_summary_title">Room changes</string>
     <string name="notif_channel_messages">New messages</string>
     <string name="notif_channel_messages_desc">New messages in your inbox</string>
     <string name="notif_channel_homework">New homework</string>
     <string name="notif_channel_homework_desc">Newly assigned homework</string>
     <string name="notif_channel_classbook">New classbook entries</string>
     <string name="notif_channel_classbook_desc">New entries in the classbook</string>
-
-    <string name="notif_timetable_summary_title">Schedule changed</string>
     <string name="notif_messages_title">New message</string>
     <string name="notif_message_from">From %1$s</string>
     <string name="notif_message_detail">%1$s · %2$s</string>
@@ -330,10 +346,17 @@
     <string name="notif_message_unknown_sender">Unknown</string>
     <string name="notif_homework_title">New homework</string>
     <string name="notif_classbook_title">New classbook entry</string>
-
-    <plurals name="notif_timetable_summary">
-        <item quantity="one">%d lesson changed – view timetable</item>
-        <item quantity="other">%d lessons changed – view timetable</item>
+    <plurals name="notif_cancellations_summary">
+        <item quantity="one">%d lesson cancelled – view timetable</item>
+        <item quantity="other">%d lessons cancelled – view timetable</item>
+    </plurals>
+    <plurals name="notif_substitutions_summary">
+        <item quantity="one">%d substitution – view timetable</item>
+        <item quantity="other">%d substitutions – view timetable</item>
+    </plurals>
+    <plurals name="notif_room_changes_summary">
+        <item quantity="one">%d room change – view timetable</item>
+        <item quantity="other">%d room changes – view timetable</item>
     </plurals>
     <plurals name="notif_messages_summary">
         <item quantity="one">%d new message</item>
