@@ -7,8 +7,10 @@ import com.webuntis.dashboard.api.WebUntisRepository
 import com.webuntis.dashboard.model.Lesson
 import com.webuntis.dashboard.model.UiState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import java.time.format.TextStyle
 import java.util.Locale
@@ -24,7 +26,9 @@ data class ContentGroup(val header: String, val entries: List<Lesson>)
 
 @HiltViewModel
 class LessonContentViewModel @Inject constructor(
-    private val repository: WebUntisRepository
+    private val repository: WebUntisRepository,
+    private val appForegroundEvents: com.webuntis.dashboard.api.AppForegroundEvents,
+    val activeAccountManager: com.webuntis.dashboard.api.ActiveAccountManager
 ) : ViewModel() {
 
     companion object {
@@ -55,16 +59,44 @@ class LessonContentViewModel @Inject constructor(
      *  re-grouping of already-loaded data — no network call needed. */
     private var lastLessons: List<Lesson> = emptyList()
 
+    private val _refreshing = MutableStateFlow(false)
+    /** True only during a user-initiated pull-to-refresh (automatic reloads stay invisible). */
+    val refreshing: StateFlow<Boolean> = _refreshing
+
+    private var loadJob: Job? = null
+
     init {
         load()
+        viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { load() } }
+        viewModelScope.launch { activeAccountManager.current.drop(1).collect { load(contextChanged = true) } }
     }
 
-    fun load(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            if (forceRefresh || _state.value !is UiState.Success) {
-                _state.value = UiState.Loading
+    /**
+     * Stale-while-revalidate, same as the other tabs: last known content (memory or disk) is
+     * shown at once — also right after an account switch ([contextChanged]) if that account has
+     * a cache — and the refresh runs silently behind it. [forceRefresh] (pull-to-refresh) drops
+     * the cache and reloads the whole window; a plain [load] (start / app resume) only
+     * refreshes the most recent days once the cache is older than the cache TTL.
+     */
+    fun load(forceRefresh: Boolean = false, contextChanged: Boolean = false, userInitiated: Boolean = false) {
+        if (contextChanged) loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            if (userInitiated) _refreshing.value = true
+            try {
+                if (contextChanged || _state.value !is UiState.Success) {
+                    if (contextChanged) { lastEntryCount = -1; lastLessons = emptyList(); _canLoadMore.value = true }
+                    val cached = repository.peekTeachingContentEntries(_windowDays.value)
+                    if (cached != null) {
+                        // Deliberately leaves lastEntryCount/canLoadMore alone: a cached list
+                        // says nothing about whether widening the window finds more.
+                        lastLessons = cached
+                        _state.value = UiState.Success(group(cached, _groupMode.value))
+                    } else _state.value = UiState.Loading
+                }
+                fetchAndApply(_windowDays.value, forceRefresh)
+            } finally {
+                if (userInitiated) _refreshing.value = false
             }
-            fetchAndApply(_windowDays.value, forceRefresh)
         }
     }
 
@@ -96,7 +128,9 @@ class LessonContentViewModel @Inject constructor(
     private suspend fun fetchAndApply(days: Int, forceRefresh: Boolean) {
         repository.getTeachingContentEntries(days, forceRefresh).fold(
             onSuccess = { lessons -> applyResult(lessons, days) },
-            onFailure = { _state.value = UiState.Error(it.message ?: "Fehler beim Laden") }
+            onFailure = {
+                if (_state.value !is UiState.Success) _state.value = UiState.Error(it.message ?: "Fehler beim Laden")
+            }
         )
     }
 

@@ -29,7 +29,8 @@ class SessionExpiredException(message: String = "Session abgelaufen") : Exceptio
 @Singleton
 class WebUntisRepository @Inject constructor(
     private val retrofitFactory: RetrofitFactory,
-    internal val sessionManager: SessionManager
+    internal val sessionManager: SessionManager,
+    private val diskCache: DiskCache
 ) {
     private val dateFmt = DateTimeFormatter.ofPattern("yyyyMMdd")
     private val isoFmt  = DateTimeFormatter.ofPattern("yyyy-MM-dd")
@@ -180,21 +181,64 @@ class WebUntisRepository @Inject constructor(
         reAuthSilently(session.server, session.schoolname, creds.first, creds.second, force = false)
     }
 
+    /** Where (and as what type) a cache category is mirrored to disk — see [DiskCache]. */
+    private class Persist(val key: String, val type: java.lang.reflect.Type)
+
+    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val TEACHING_RECENT_REFRESH_DAYS = 7
+
+    /** Disk keys are scoped to server + user + active account, so one login can never be
+     *  shown another login's data (and the two accounts of a parent don't mix). */
+    private fun diskKey(name: String): String {
+        val s = sessionManager.session
+        val raw = "${s?.server}|${s?.username}|${sessionManager.activeAccountKey ?: "primary"}"
+        return "${Integer.toHexString(raw.hashCode())}_$name"
+    }
+
     private suspend fun <T> withCacheOrFetch(
         forceRefresh: Boolean = false,
         cache: () -> CacheEntry<T>?,
         store: (CacheEntry<T>) -> Unit,
+        persist: Persist? = null,
         block: suspend () -> Result<T>
     ): Result<T> {
-        val entry = cache()
+        var entry = cache()
+        // Cold start: memory is empty but the disk may hold a still-fresh result.
+        if (entry == null && persist != null && !forceRefresh) {
+            peekCached(cache, store, persist)
+            entry = cache()
+        }
         if (!forceRefresh && entry != null && sessionManager.isCacheFresh(entry.fetchedAt)) {
             return entry.data
         }
         val result = withSessionRetry(block)
         if (result.isSuccess) {
-            store(CacheEntry(System.currentTimeMillis(), result))
+            val now = System.currentTimeMillis()
+            store(CacheEntry(now, result))
+            if (persist != null) {
+                val data = result.getOrNull()
+                persistScope.launch { diskCache.write(persist.key, now, data) }
+            }
         }
         return result
+    }
+
+    /**
+     * Last known data for a category, regardless of age and without touching the network:
+     * from memory if present, otherwise from disk (which also repopulates the memory cache
+     * with the ORIGINAL fetch time, so normal TTL rules still decide whether a refetch is
+     * due). Used by the ViewModels to paint something immediately.
+     */
+    private suspend fun <T> peekCached(
+        cache: () -> CacheEntry<T>?,
+        store: (CacheEntry<T>) -> Unit,
+        persist: Persist
+    ): T? {
+        cache()?.data?.getOrNull()?.let { return it }
+        val loaded = withContext(Dispatchers.IO) { diskCache.read<T>(persist.key, persist.type) }
+            ?: return null
+        if (cache() == null) store(CacheEntry(loaded.first, Result.success(loaded.second)))
+        return loaded.second
     }
 
     private suspend fun <T> withSessionRetry(block: suspend () -> Result<T>): Result<T> {
@@ -266,6 +310,7 @@ class WebUntisRepository @Inject constructor(
     private var cacheTimetableByAccount:    MutableMap<String, CacheEntry<List<TimetableDay>>> = mutableMapOf()
     private var cacheHomeworkByAccount:     MutableMap<String, CacheEntry<Pair<List<Homework>, Map<String, String>>>> = mutableMapOf()
     private var cacheEventsByAccount:       MutableMap<String, CacheEntry<List<SchoolEvent>>> = mutableMapOf()
+    private var cacheEventsPastByAccount:   MutableMap<String, CacheEntry<List<SchoolEvent>>> = mutableMapOf()
     private var cacheClassbookByAccount:    MutableMap<String, CacheEntry<List<ClassbookEntry>>> = mutableMapOf()
     // Holds both the reported absences AND their per-lesson breakdown, since both come from
     // the single classreg/absencetimes/student call — see fetchAbsencesAndTimes().
@@ -285,8 +330,13 @@ class WebUntisRepository @Inject constructor(
     // size grows over time ("Weitere Tage laden") and each grow only needs to fetch+enrich the
     // newly-uncovered older slice instead of re-fetching (and re-hitting the per-lesson detail
     // endpoint for) days already covered. See getTeachingContentEntries().
-    private var cacheTeachingContentDays:    Int          = 0
-    private var cacheTeachingContentEntries: List<Lesson> = emptyList()
+    private val cacheTeachingContentByAccount: MutableMap<String, TeachingContentCache> = mutableMapOf()
+    private val teachingContentMutex = Mutex()
+
+    /** What the "Unterrichtsinhalte" tab has loaded so far: only lessons that actually carry a
+     *  teaching content text, the number of days back from today they cover, and when the
+     *  cache was last refreshed from the server. Mirrored to disk like the other caches. */
+    private data class TeachingContentCache(val days: Int, val entries: List<Lesson>, val fetchedAt: Long)
 
     /**
      * Full reset: clears data caches AND wipes the session/credentials/settings entirely.
@@ -306,8 +356,9 @@ class WebUntisRepository @Inject constructor(
     private fun clearAllDataCaches() {
         cacheTimetableByAccount.clear(); cacheHomeworkByAccount.clear(); cacheEventsByAccount.clear()
         cacheClassbookByAccount.clear(); cacheSchoolYear = null; cacheAbsencesByAccount.clear(); cacheMessages = null; cacheSentMessages = null; cacheDraftMessages = null; cacheTeachers = null
-        cacheTeachingContentDays = 0; cacheTeachingContentEntries = emptyList()
+        cacheTeachingContentByAccount.clear(); cacheEventsPastByAccount.clear()
         cacheAbsencesMetaByAccount.clear(); cacheTimegrid = null
+        diskCache.clearAll()
     }
 
     /** Switches between the personal ("MY_TIMETABLE") and class ("STANDARD") timetable views. */
@@ -357,13 +408,27 @@ class WebUntisRepository @Inject constructor(
      * events and messages each carry only a short code or only a long name from their own
      * endpoints — this lets the UI show both, e.g. "Mathematik (M)" / "Müller (Mü)".
      */
+    /** Like [getNameCatalog] but never hits the network: built from the cached timetable
+     *  (memory or disk) only, or null if there isn't one yet. For painting stale content fast. */
+    suspend fun peekNameCatalog(): NameCatalog? {
+        val lessons = (cacheTimetableByAccount[currentAccountScope()]?.data?.getOrNull()
+            ?: peekTwoSchoolDays())?.flatMap { it.lessons }
+        if (lessons.isNullOrEmpty()) return null
+        return buildNameCatalog(lessons)
+    }
+
     suspend fun getNameCatalog(): NameCatalog {
         val cachedLessons = cacheTimetableByAccount[currentAccountScope()]?.data?.getOrNull()?.flatMap { it.lessons }
+            ?: peekTwoSchoolDays()?.flatMap { it.lessons }
         val lessons = if (!cachedLessons.isNullOrEmpty()) cachedLessons else {
             val start = LocalDate.now().minusDays(7).toUntis()
             val end   = LocalDate.now().plusDays(14).toUntis()
             fetchLessonsInRange(start, end).getOrNull() ?: emptyList()
         }
+        return buildNameCatalog(lessons)
+    }
+
+    private fun buildNameCatalog(lessons: List<Lesson>): NameCatalog {
         val subjectMap = linkedMapOf<String, String>()
         val teacherMap = linkedMapOf<String, String>()
         val colorMap = linkedMapOf<String, String>()
@@ -929,10 +994,30 @@ class WebUntisRepository @Inject constructor(
         return personal + overlay
     }
 
+    // Mode and day count are part of the key: a different personal/class/combined view or
+    // window size is a different result and must not be served from another one's file.
+    private fun timetablePersist() = Persist(
+        diskKey("timetable_${sessionManager.timetableViewMode.name}_${sessionManager.timetableDays}" +
+            // The combined view depends on which class-plan subjects fill gaps.
+            if (sessionManager.timetableViewMode == SessionManager.TimetableViewMode.COMBINED)
+                "_" + Integer.toHexString(sessionManager.combinedOverlaySubjects.sorted().hashCode()) else ""),
+        object : TypeToken<List<TimetableDay>>() {}.type
+    )
+
+    /** Last known default timetable window, without network. Days that are already over are dropped. */
+    suspend fun peekTwoSchoolDays(): List<TimetableDay>? {
+        val p = timetablePersist()
+        val data = peekCached({ cacheTimetableByAccount[currentAccountScope()] },
+            { cacheTimetableByAccount[currentAccountScope()] = it }, p) ?: return null
+        val today = LocalDate.now()
+        return data.filter { !it.date.isBefore(today) }.takeIf { it.isNotEmpty() }
+    }
+
     suspend fun getTwoSchoolDays(forceRefresh: Boolean = false): Result<List<TimetableDay>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheTimetableByAccount[currentAccountScope()] },
         store = { cacheTimetableByAccount[currentAccountScope()] = it },
+        persist = timetablePersist(),
     ) {
         val numDays = sessionManager.timetableDays
         val today = LocalDate.now()
@@ -1245,10 +1330,18 @@ class WebUntisRepository @Inject constructor(
         }
     }
 
+    private fun homeworkPersist() = Persist(diskKey("homework"),
+        object : TypeToken<Pair<List<Homework>, Map<String, String>>>() {}.type)
+
+    suspend fun peekHomework(): Pair<List<Homework>, Map<String, String>>? =
+        peekCached({ cacheHomeworkByAccount[currentAccountScope()] },
+            { cacheHomeworkByAccount[currentAccountScope()] = it }, homeworkPersist())
+
     suspend fun getHomework(forceRefresh: Boolean = false): Result<Pair<List<Homework>, Map<String, String>>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheHomeworkByAccount[currentAccountScope()] },
         store = { cacheHomeworkByAccount[currentAccountScope()] = it },
+        persist = homeworkPersist(),
     ) {
         try {
             val token = getAuthHeader()
@@ -1366,9 +1459,17 @@ class WebUntisRepository @Inject constructor(
             } ?: years.firstOrNull() ?: throw Exception("Kein Schuljahr gefunden")
         }
 
+    private fun classbookPersist() = Persist(diskKey("classbook"),
+        object : TypeToken<List<ClassbookEntry>>() {}.type)
+
+    suspend fun peekClassbookEntries(): List<ClassbookEntry>? =
+        peekCached({ cacheClassbookByAccount[currentAccountScope()] },
+            { cacheClassbookByAccount[currentAccountScope()] = it }, classbookPersist())
+
     suspend fun getClassbookEntries(forceRefresh: Boolean = false): Result<List<ClassbookEntry>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheClassbookByAccount[currentAccountScope()] },
+        persist = classbookPersist(),
         store = { cacheClassbookByAccount[currentAccountScope()] = it },
     ) {
         try {
@@ -1455,52 +1556,132 @@ class WebUntisRepository @Inject constructor(
      * this tab — today and the most recent past days, e.g. "yesterday" — are prioritized and
      * always end up enriched, rather than being pushed out by the far end of the range.
      */
-    suspend fun getTeachingContentEntries(days: Int, forceRefresh: Boolean = false): Result<List<Lesson>> {
-        if (forceRefresh) {
-            cacheTeachingContentDays = 0
-            cacheTeachingContentEntries = emptyList()
-        }
-        val today = LocalDate.now()
-        if (days > cacheTeachingContentDays) {
-            val rangeStart = today.minusDays((days - 1).toLong())
-            val rangeEnd = if (cacheTeachingContentDays > 0)
-                today.minusDays(cacheTeachingContentDays.toLong())
-            else
-                today
-            // Scale the enrichment cap with how many *new* days are being requested (roughly
-            // 8 lessons/day) so a big first load or a big "Weitere Tage laden" jump doesn't get
-            // silently truncated the way the fixed 40-lesson default (tuned for single-day
-            // Stundenplan views) would.
-            val newDays = days - cacheTeachingContentDays
-            val cap = (newDays * 8).coerceIn(40, 400)
-            val rangeResult = fetchLessonsInRange(
-                rangeStart.toUntis(), rangeEnd.toUntis(), anchorDate = today, maxEnrich = cap
-            )
-            val newLessons = rangeResult.getOrElse {
-                return if (cacheTeachingContentEntries.isNotEmpty()) {
-                    // Already have something cached (e.g. from a smaller previous window) —
-                    // prefer showing that over failing the whole tab outright.
-                    Result.success(cacheTeachingContentEntries.filter {
-                        val d = it.localDate ?: return@filter false
-                        !d.isBefore(today.minusDays((cacheTeachingContentDays - 1).toLong()))
-                    })
-                } else Result.failure(it)
-            }
-            cacheTeachingContentEntries = (cacheTeachingContentEntries + newLessons).distinctBy { it.id }
-            cacheTeachingContentDays = days
-        }
+    private fun teachingPersist() = Persist(diskKey("teaching_content"),
+        object : TypeToken<TeachingContentCache>() {}.type)
+
+    /** Memory first, then disk. Caller must hold [teachingContentMutex]. */
+    private suspend fun loadTeachingCache(): TeachingContentCache? {
+        val scope = currentAccountScope()
+        cacheTeachingContentByAccount[scope]?.let { return it }
+        val p = teachingPersist()
+        val loaded = withContext(Dispatchers.IO) { diskCache.read<TeachingContentCache>(p.key, p.type) }
+            ?: return null
+        return loaded.second.also { cacheTeachingContentByAccount[scope] = it }
+    }
+
+    private fun filterTeachingContent(entries: List<Lesson>, days: Int, today: LocalDate): List<Lesson> {
         val cutoff = today.minusDays((days - 1).toLong())
-        val filtered = cacheTeachingContentEntries.filter { lesson ->
+        return entries.filter { lesson ->
             !lesson.teachingContent.isNullOrBlank() &&
                 lesson.localDate?.let { !it.isBefore(cutoff) && !it.isAfter(today) } == true
         }
-        return Result.success(filtered)
     }
+
+    /** Last known Unterrichtsinhalte for a [days]-day window without touching the network
+     *  (memory, else disk), or null if nothing has been loaded yet. Whatever days the cache
+     *  covers are returned, even if fewer than [days]. */
+    suspend fun peekTeachingContentEntries(days: Int): List<Lesson>? = teachingContentMutex.withLock {
+        val cache = loadTeachingCache() ?: return@withLock null
+        filterTeachingContent(cache.entries, days, LocalDate.now())
+    }
+
+    /**
+     * Lessons with a non-empty [Lesson.teachingContent] for the last [days] days — the data
+     * behind the "Unterrichtsinhalte" tab.
+     *
+     * Unlike getClassbookEntries (one cheap API call for the whole school year), populating
+     * teachingContent needs one detail call PER lesson, so fetching a whole year up front isn't
+     * viable. Instead this grows a persistent cache incrementally: each call only fetches+enriches
+     * the slice of days not already covered by a previous call, and merges it in — so repeatedly
+     * widening the window (the "Weitere Tage laden" button) doesn't re-fetch days already loaded.
+     *
+     * Once the cache is older than the normal cache TTL, only the most recent
+     * [TEACHING_RECENT_REFRESH_DAYS] days are re-fetched and merged (older days rarely change
+     * and re-enriching them would cost one detail call per lesson). [forceRefresh]
+     * (pull-to-refresh) drops the cache and reloads the whole window.
+     *
+     * anchorDate is always "today" (not the oldest day in the window) so that when a window is
+     * wide enough to exceed the per-request enrichment cap, the days actually most relevant to
+     * this tab — today and the most recent past days, e.g. "yesterday" — are prioritized and
+     * always end up enriched, rather than being pushed out by the far end of the range.
+     */
+    suspend fun getTeachingContentEntries(days: Int, forceRefresh: Boolean = false): Result<List<Lesson>> =
+        teachingContentMutex.withLock {
+            val scope = currentAccountScope()
+            val today = LocalDate.now()
+            var cache: TeachingContentCache? = if (forceRefresh) null else loadTeachingCache()
+            var entries = cache?.entries ?: emptyList()
+            var coveredDays = cache?.days ?: 0
+            var fetchedAt = cache?.fetchedAt ?: 0L
+            var changed = false
+
+            // 1) TTL-stale cache: refresh just the recent days. A failure here is silent —
+            //    the cached content stays valid to show.
+            if (cache != null && !sessionManager.isCacheFresh(cache.fetchedAt)) {
+                val recent = minOf(days, coveredDays, TEACHING_RECENT_REFRESH_DAYS).coerceAtLeast(1)
+                val recentStart = today.minusDays((recent - 1).toLong())
+                val res = fetchLessonsInRange(
+                    recentStart.toUntis(), today.toUntis(), anchorDate = today,
+                    maxEnrich = (recent * 8).coerceIn(40, 400)
+                )
+                res.getOrNull()?.let { fresh ->
+                    entries = entries.filter { l -> l.localDate?.let { it.isBefore(recentStart) } ?: true } +
+                        fresh.filter { !it.teachingContent.isNullOrBlank() }
+                    fetchedAt = System.currentTimeMillis()
+                    changed = true
+                }
+            }
+
+            // 2) Window wider than what's cached: fetch only the newly-uncovered older slice.
+            if (days > coveredDays) {
+                val rangeStart = today.minusDays((days - 1).toLong())
+                val rangeEnd = if (coveredDays > 0) today.minusDays(coveredDays.toLong()) else today
+                // Scale the enrichment cap with how many *new* days are being requested (roughly
+                // 8 lessons/day) so a big first load or a big "Weitere Tage laden" jump doesn't get
+                // silently truncated the way the fixed 40-lesson default (tuned for single-day
+                // Stundenplan views) would.
+                val newDays = days - coveredDays
+                val cap = (newDays * 8).coerceIn(40, 400)
+                val rangeResult = fetchLessonsInRange(
+                    rangeStart.toUntis(), rangeEnd.toUntis(), anchorDate = today, maxEnrich = cap
+                )
+                val newLessons = rangeResult.getOrElse {
+                    // Already have something cached (e.g. from a smaller previous window) —
+                    // prefer showing that over failing the whole tab outright.
+                    return@withLock if (cache != null || entries.isNotEmpty())
+                        Result.success(filterTeachingContent(entries, coveredDays.coerceAtLeast(1), today))
+                    else Result.failure(it)
+                }
+                entries = (entries + newLessons.filter { !it.teachingContent.isNullOrBlank() }).distinctBy { it.id }
+                coveredDays = days
+                if (cache == null) fetchedAt = System.currentTimeMillis()
+                changed = true
+            }
+
+            if (changed) {
+                val updated = TeachingContentCache(coveredDays, entries, fetchedAt)
+                cacheTeachingContentByAccount[scope] = updated
+                val p = teachingPersist()
+                persistScope.launch { diskCache.write(p.key, fetchedAt, updated) }
+            }
+            Result.success(filterTeachingContent(entries, days, today))
+        }
+
+    private fun eventsCacheMap(includePast: Boolean) =
+        if (includePast) cacheEventsPastByAccount else cacheEventsByAccount
+
+    private fun eventsPersist(includePast: Boolean) = Persist(diskKey(if (includePast) "events_past" else "events"),
+        object : TypeToken<List<SchoolEvent>>() {}.type)
+
+    suspend fun peekEvents(includePast: Boolean = false): List<SchoolEvent>? =
+        peekCached({ eventsCacheMap(includePast)[currentAccountScope()] },
+            { eventsCacheMap(includePast)[currentAccountScope()] = it }, eventsPersist(includePast))
 
     suspend fun getEvents(forceRefresh: Boolean = false, includePast: Boolean = false): Result<List<SchoolEvent>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
-        cache = { if (includePast) null else cacheEventsByAccount[currentAccountScope()] },
-        store = { if (!includePast) cacheEventsByAccount[currentAccountScope()] = it },
+        cache = { eventsCacheMap(includePast)[currentAccountScope()] },
+        store = { eventsCacheMap(includePast)[currentAccountScope()] = it },
+        persist = eventsPersist(includePast),
     ) {
         try {
             val token = getAuthHeader()
@@ -1581,10 +1762,17 @@ class WebUntisRepository @Inject constructor(
      * Fetches the school's timegrid (lesson periods with start/end times).
      * Uses the current school year ID. Cached with normal TTL.
      */
+    private fun timegridPersist() = Persist(diskKey("timegrid"),
+        object : TypeToken<List<com.webuntis.dashboard.model.TimegridRow>>() {}.type)
+
+    suspend fun peekTimegrid(): List<com.webuntis.dashboard.model.TimegridRow>? =
+        peekCached({ cacheTimegrid }, { cacheTimegrid = it }, timegridPersist())
+
     suspend fun getTimegrid(forceRefresh: Boolean = false): Result<List<com.webuntis.dashboard.model.TimegridRow>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheTimegrid },
         store = { cacheTimegrid = it },
+        persist = timegridPersist(),
     ) {
         try {
             val token = getAuthHeader()
@@ -1606,10 +1794,18 @@ class WebUntisRepository @Inject constructor(
      * even when called back-to-back (e.g. AbsencesViewModel.load()) — the second call is served
      * from cache as long as the first one just refreshed it.
      */
+    private fun absencesPersist() = Persist(diskKey("absences"),
+        object : TypeToken<Pair<List<Absence>, List<AbsenceTime>>>() {}.type)
+
+    suspend fun peekAbsencesAndTimes(): Pair<List<Absence>, List<AbsenceTime>>? =
+        peekCached({ cacheAbsencesByAccount[currentAccountScope()] },
+            { cacheAbsencesByAccount[currentAccountScope()] = it }, absencesPersist())
+
     private suspend fun fetchAbsencesAndTimes(forceRefresh: Boolean = false): Result<Pair<List<Absence>, List<AbsenceTime>>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheAbsencesByAccount[currentAccountScope()] },
         store = { cacheAbsencesByAccount[currentAccountScope()] = it },
+        persist = absencesPersist(),
     ) {
         try {
             val token = getAuthHeader()
@@ -1636,10 +1832,18 @@ class WebUntisRepository @Inject constructor(
     suspend fun getAbsenceTimes(forceRefresh: Boolean = false): Result<List<AbsenceTime>> =
         fetchAbsencesAndTimes(forceRefresh).map { it.second }
 
+    private fun absencesMetaPersist() = Persist(diskKey("absences_meta"),
+        object : TypeToken<AbsencesMetaData>() {}.type)
+
+    suspend fun peekAbsencesMeta(): AbsencesMetaData? =
+        peekCached({ cacheAbsencesMetaByAccount[currentAccountScope()] },
+            { cacheAbsencesMetaByAccount[currentAccountScope()] = it }, absencesMetaPersist())
+
     suspend fun getAbsencesMeta(forceRefresh: Boolean = false): Result<AbsencesMetaData> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheAbsencesMetaByAccount[currentAccountScope()] },
         store = { cacheAbsencesMetaByAccount[currentAccountScope()] = it },
+        persist = absencesMetaPersist(),
     ) {
         try {
             val token = getAuthHeader()
@@ -1866,10 +2070,23 @@ class WebUntisRepository @Inject constructor(
         return additionalBearerTokens[account.key]?.let { "Bearer $it" } ?: primaryHeader
     }
 
+    private fun messagesPersist(box: String) = Persist(diskKey("messages_$box"),
+        object : TypeToken<List<Message>>() {}.type)
+
+    suspend fun peekMessages(): List<Message>? =
+        peekCached({ cacheMessages }, { cacheMessages = it }, messagesPersist("inbox"))
+
+    suspend fun peekSentMessages(): List<Message>? =
+        peekCached({ cacheSentMessages }, { cacheSentMessages = it }, messagesPersist("sent"))
+
+    suspend fun peekDrafts(): List<Message>? =
+        peekCached({ cacheDraftMessages }, { cacheDraftMessages = it }, messagesPersist("drafts"))
+
     suspend fun getMessages(forceRefresh: Boolean = false): Result<List<Message>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheMessages },
         store = { cacheMessages = it },
+        persist = messagesPersist("inbox"),
     ) {
         try {
             val session      = sessionManager.session
@@ -2017,6 +2234,7 @@ class WebUntisRepository @Inject constructor(
         forceRefresh = forceRefresh,
         cache = { cacheSentMessages },
         store = { cacheSentMessages = it },
+        persist = messagesPersist("sent"),
     ) {
         try {
             val session      = sessionManager.session
@@ -2037,6 +2255,7 @@ class WebUntisRepository @Inject constructor(
         forceRefresh = forceRefresh,
         cache = { cacheDraftMessages },
         store = { cacheDraftMessages = it },
+        persist = messagesPersist("drafts"),
     ) {
         try {
             val session      = sessionManager.session
@@ -2140,6 +2359,7 @@ class WebUntisRepository @Inject constructor(
 
             // Invalidate inbox + sent caches
             cacheMessages = null; cacheSentMessages = null
+            diskCache.deleteContaining("_messages_inbox"); diskCache.deleteContaining("_messages_sent")
             Result.success(Unit)
         } catch (e: Exception) {
             if (e is SessionExpiredException) throw e
@@ -2206,6 +2426,7 @@ class WebUntisRepository @Inject constructor(
                 ?: return Result.failure(Exception("Leere Antwort vom Server"))
             val saved: Message = gson.fromJson(responseRaw, Message::class.java)
             cacheDraftMessages = null
+            diskCache.deleteContaining("_messages_drafts")
             Result.success(saved.copy(storedIn = "DRAFT"))
         } catch (e: Exception) { Result.failure(e) }
     }
@@ -2228,9 +2449,9 @@ class WebUntisRepository @Inject constructor(
             val token = tokenForMessage(msg) ?: return Result.failure(Exception("Nicht authentifiziert"))
             service().deleteMessage(token, msg.id)
             when {
-                msg.isDraft -> cacheDraftMessages = null
-                msg.isSent  -> cacheSentMessages  = null
-                else        -> cacheMessages      = null
+                msg.isDraft -> { cacheDraftMessages = null; diskCache.deleteContaining("_messages_drafts") }
+                msg.isSent  -> { cacheSentMessages  = null; diskCache.deleteContaining("_messages_sent") }
+                else        -> { cacheMessages      = null; diskCache.deleteContaining("_messages_inbox") }
             }
             Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }

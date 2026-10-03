@@ -38,7 +38,13 @@ class EventsFragment : Fragment() {
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 
-        binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true) }
+        binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true, userInitiated = true) }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
+            }
+        }
+
         binding.toolbar.setupAccountSwitcher(viewModel.activeAccountManager)
 
         // Sync tab to current ViewModel state (e.g. after rotation)
@@ -55,7 +61,6 @@ class EventsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.state.collect { state ->
-                    binding.swipeRefresh.isRefreshing = state is UiState.Loading
                     when (state) {
                         is UiState.Loading -> {
                             binding.progressBar.isVisible = true

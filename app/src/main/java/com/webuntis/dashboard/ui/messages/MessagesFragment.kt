@@ -21,14 +21,14 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.tabs.TabLayout
+import com.google.android.material.textfield.TextInputLayout
 import com.webuntis.dashboard.R
 import com.webuntis.dashboard.databinding.FragmentMessagesBinding
 import com.webuntis.dashboard.databinding.ItemMessageBinding
 import com.webuntis.dashboard.model.Attachment
 import com.webuntis.dashboard.model.Message
-import com.webuntis.dashboard.model.ReplyMessage
 import com.webuntis.dashboard.model.RecipientPerson
-import com.webuntis.dashboard.model.Teacher
+import com.webuntis.dashboard.model.ReplyMessage
 import com.webuntis.dashboard.model.UiState
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -87,7 +87,13 @@ class MessagesFragment : Fragment() {
         )
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
-        binding.swipeRefresh.setOnRefreshListener { viewModel.refresh() }
+        binding.swipeRefresh.setOnRefreshListener { viewModel.refresh(userInitiated = true) }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
+            }
+        }
+
 
         // Swipe left to delete drafts / messages
         val swipeCallback = object : androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback(
@@ -316,7 +322,7 @@ class MessagesFragment : Fragment() {
         }
 
         // AutoCompleteTextView in TextInputLayout
-        val tilRecipient = com.google.android.material.textfield.TextInputLayout(
+        val tilRecipient = TextInputLayout(
             ctx, null,
             com.google.android.material.R.attr.textInputOutlinedExposedDropdownMenuStyle
         ).apply {

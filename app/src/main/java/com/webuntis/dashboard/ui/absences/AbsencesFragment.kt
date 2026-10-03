@@ -18,29 +18,25 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
-import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.webuntis.dashboard.model.AbsencesMetaData
-import com.webuntis.dashboard.model.AbsenceReason
-import com.webuntis.dashboard.model.TimegridRow
 import com.webuntis.dashboard.R
 import com.webuntis.dashboard.api.CreateAbsenceRequest
 import com.webuntis.dashboard.databinding.DialogEditAbsenceBinding
 import com.webuntis.dashboard.databinding.FragmentAbsencesBinding
-import com.webuntis.dashboard.ui.common.setupAccountSwitcher
 import com.webuntis.dashboard.databinding.ItemAbsenceBinding
 import com.webuntis.dashboard.databinding.ItemAbsenceDayHeaderBinding
 import com.webuntis.dashboard.databinding.ItemAbsenceTimeBinding
 import com.webuntis.dashboard.model.Absence
 import com.webuntis.dashboard.model.AbsenceCluster
-import com.webuntis.dashboard.model.clusterConsecutive
 import com.webuntis.dashboard.model.AbsenceListEntry
-import com.webuntis.dashboard.model.untisDateLabel
 import com.webuntis.dashboard.model.UiState
+import com.webuntis.dashboard.model.clusterConsecutive
+import com.webuntis.dashboard.model.untisDateLabel
+import com.webuntis.dashboard.ui.common.setupAccountSwitcher
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -66,7 +62,13 @@ class AbsencesFragment : Fragment() {
         val adapter = AbsenceAdapter { absence -> showEditAbsenceDialog(absence) }
         val dayAdapter = AbsenceDayAdapter()
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true) }
+        binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true, userInitiated = true) }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
+            }
+        }
+
         binding.toolbar.setupAccountSwitcher(viewModel.activeAccountManager)
         binding.fabAdd.setOnClickListener { showEditAbsenceDialog(null) }
 

@@ -116,6 +116,11 @@ class TimetableViewModel @Inject constructor(
     private val _days = MutableStateFlow<UiState<List<SchoolDay>>>(UiState.Loading)
     val days: StateFlow<UiState<List<SchoolDay>>> = _days
 
+    private val _refreshing = MutableStateFlow(false)
+    /** True only while a user-initiated pull-to-refresh is running. Automatic reloads (start,
+     *  returning to the app, ...) stay invisible: stale content remains on screen meanwhile. */
+    val refreshing: StateFlow<Boolean> = _refreshing
+
     private val _absences = MutableStateFlow<List<Absence>>(emptyList())
     val absences: StateFlow<List<Absence>> = _absences
 
@@ -145,7 +150,7 @@ class TimetableViewModel @Inject constructor(
     fun setTimetableViewMode(mode: SessionManager.TimetableViewMode) {
         if (repository.sessionManager.timetableViewMode == mode) return
         repository.setTimetableViewMode(mode)
-        loadAll(forceRefresh = true)
+        loadAll(forceRefresh = true, contextChanged = true)
     }
 
     fun toggleTimetableViewMode() {
@@ -167,7 +172,7 @@ class TimetableViewModel @Inject constructor(
         if (timetableViewMode != SessionManager.TimetableViewMode.COMBINED) {
             repository.setTimetableViewMode(SessionManager.TimetableViewMode.COMBINED)
         }
-        loadAll(forceRefresh = true)
+        loadAll(forceRefresh = true, contextChanged = true)
     }
 
     /** Distinct subjects currently available in the class plan, for the picker dialog. */
@@ -188,33 +193,57 @@ class TimetableViewModel @Inject constructor(
      *  Stunde") a lesson is, alongside its time range. */
     val timegridRows: StateFlow<List<com.webuntis.dashboard.model.TimegridRow>> = _timegridRows
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     init {
         loadAll()
         viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { loadAll(forceRefresh = true) } }
         // .drop(1): the StateFlow immediately replays its current value to a new collector,
         // which would otherwise trigger a redundant reload right after the loadAll() above.
-        viewModelScope.launch { activeAccountManager.current.drop(1).collect { loadAll(forceRefresh = true) } }
-        viewModelScope.launch { _timegridRows.value = repository.getTimegrid(forceRefresh = false).getOrDefault(emptyList()) }
+        viewModelScope.launch { activeAccountManager.current.drop(1).collect { loadAll(forceRefresh = true, contextChanged = true) } }
+        viewModelScope.launch {
+            repository.peekTimegrid()?.let { _timegridRows.value = it }
+            _timegridRows.value = repository.getTimegrid(forceRefresh = false).getOrDefault(_timegridRows.value)
+        }
     }
 
-    fun loadAll(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            if (forceRefresh || _days.value !is UiState.Success) {
-                _days.value = UiState.Loading
-            }
+    /**
+     * Stale-while-revalidate. Whatever is already on screen stays; otherwise (first load, or
+     * [contextChanged] = the data now belongs to something else, e.g. other account/tab/mode)
+     * the last known data FOR THE NEW CONTEXT is taken from the cache (memory or disk) and shown
+     * at once — a spinner only appears if there is nothing cached for it. The network refresh
+     * then runs silently behind. A failed refresh never replaces content that is on screen.
+     * [userInitiated] = pull-to-refresh, the only case that shows the swipe spinner.
+     */
+
+    fun loadAll(forceRefresh: Boolean = false, contextChanged: Boolean = false, userInitiated: Boolean = false) {
+        // A new context makes any still-running load for the old one obsolete — cancel it so
+        // it can't overwrite what's shown for the new one when it finishes.
+        if (contextChanged) loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             val anchor = _anchorDate.value
-            _days.value = if (anchor == null || anchor == LocalDate.now()) {
-                repository.getTwoSchoolDays(forceRefresh).fold(
-                    onSuccess = { list -> UiState.Success(list.map { SchoolDay(it) }) },
-                    onFailure = { UiState.Error(it.message ?: "Fehler beim Laden") }
+            val atDefault = anchor == null || anchor == LocalDate.now()
+            if (userInitiated) _refreshing.value = true
+            try {
+                if (contextChanged || _days.value !is UiState.Success) {
+                    val cached = if (atDefault) repository.peekTwoSchoolDays() else null
+                    _days.value = if (cached != null) UiState.Success(cached.map { SchoolDay(it) }) else UiState.Loading
+                    _absences.value = repository.peekAbsencesAndTimes()?.first ?: emptyList()
+                }
+
+                val result = if (atDefault) repository.getTwoSchoolDays(forceRefresh)
+                else repository.getSchoolDaysFrom(anchor!!, repository.sessionManager.timetableDays, forceRefresh)
+                result.fold(
+                    onSuccess = { list -> _days.value = UiState.Success(list.map { SchoolDay(it) }) },
+                    onFailure = {
+                        // Keep showing the last known content if a background refresh fails.
+                        if (_days.value !is UiState.Success) _days.value = UiState.Error(it.message ?: "Fehler beim Laden")
+                    }
                 )
-            } else {
-                repository.getSchoolDaysFrom(anchor, repository.sessionManager.timetableDays, forceRefresh).fold(
-                    onSuccess = { list -> UiState.Success(list.map { SchoolDay(it) }) },
-                    onFailure = { UiState.Error(it.message ?: "Fehler beim Laden") }
-                )
+                repository.getAbsences(forceRefresh).onSuccess { _absences.value = it }
+            } finally {
+                if (userInitiated) _refreshing.value = false
             }
-            repository.getAbsences(forceRefresh).onSuccess { _absences.value = it }
         }
     }
 
@@ -257,7 +286,7 @@ class TimetableViewModel @Inject constructor(
 
     fun resetToToday() {
         _anchorDate.value = null
-        loadAll(forceRefresh = true)
+        loadAll(forceRefresh = true, contextChanged = _days.value !is UiState.Success)
     }
 
     /**

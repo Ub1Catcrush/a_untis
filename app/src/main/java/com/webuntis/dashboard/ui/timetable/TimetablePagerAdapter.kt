@@ -85,10 +85,12 @@ class DayFragment : Fragment() {
         // Give TimeIndicatorView a reference so it can read real child bounds
         binding.timeIndicator.recyclerView = binding.recyclerView
 
-        // Sync TimeIndicatorView scroll position with RecyclerView
+        // Redraw the line while scrolling. NOTE: the indicator must never get a scrollY of its
+        // own — it computes its Y directly from the live child bounds (already in its own
+        // coordinate space), so any extra scroll offset would shift the line by exactly that
+        // amount (this used to move it down by the RecyclerView's 12dp top padding).
         binding.recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                binding.timeIndicator.scrollY = getRecyclerScrollY(rv)
                 binding.timeIndicator.invalidate()
             }
         })
@@ -214,13 +216,12 @@ class DayFragment : Fragment() {
                         // draw the line against stale bounds, making it appear ahead of where the
                         // still-current lesson visually ends.
                         binding.recyclerView.doOnNextLayout {
-                            binding.timeIndicator.scrollY = getRecyclerScrollY(binding.recyclerView)
                             binding.timeIndicator.currentTimeMin = nowMin
+                            binding.timeIndicator.invalidate()
                         }
                         // In case no layout pass actually gets scheduled (nothing visually
                         // changed), still update directly so the line isn't stuck.
                         binding.timeIndicator.currentTimeMin = nowMin
-                        binding.timeIndicator.scrollY = getRecyclerScrollY(binding.recyclerView)
                     }
                     // Sleep until the next full minute
                     val now = java.util.Calendar.getInstance()
@@ -229,14 +230,6 @@ class DayFragment : Fragment() {
                 }
             }
         }
-    }
-
-    private fun getRecyclerScrollY(rv: androidx.recyclerview.widget.RecyclerView): Int {
-        val lm = rv.layoutManager as? LinearLayoutManager ?: return 0
-        val firstPos = lm.findFirstVisibleItemPosition()
-        if (firstPos == RecyclerView.NO_POSITION) return 0
-        val firstView = lm.findViewByPosition(firstPos) ?: return 0
-        return -firstView.top + firstPos * firstView.height
     }
 
     private fun showLessonDetail(lesson: Lesson) {

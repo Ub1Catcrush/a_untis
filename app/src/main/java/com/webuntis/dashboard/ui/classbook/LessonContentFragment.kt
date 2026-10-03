@@ -1,5 +1,6 @@
 package com.webuntis.dashboard.ui.classbook
 
+import androidx.lifecycle.repeatOnLifecycle
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -37,7 +38,12 @@ class LessonContentFragment : Fragment() {
         val adapter = LessonContentAdapter()
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
-        binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true) }
+        binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true, userInitiated = true) }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
+            }
+        }
         binding.btnLoadMore.setOnClickListener { viewModel.loadMoreDays() }
         binding.btnToggleGroupMode.setOnClickListener { viewModel.toggleGroupMode() }
 

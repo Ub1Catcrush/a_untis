@@ -45,61 +45,92 @@ class HomeworkViewModel @Inject constructor(
     private val _state = MutableStateFlow<UiState<List<HomeworkUiItem>>>(UiState.Loading)
     val state: StateFlow<UiState<List<HomeworkUiItem>>> = _state
 
+    private val _refreshing = MutableStateFlow(false)
+    /** True only during a user-initiated pull-to-refresh (automatic reloads stay invisible). */
+    val refreshing: StateFlow<Boolean> = _refreshing
+
     private val _showPast = MutableStateFlow(false)
     val showPast: StateFlow<Boolean> = _showPast
 
     private val doneIds = mutableSetOf<Int>()
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     init {
         load()
         viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { load(forceRefresh = true) } }
-        viewModelScope.launch { activeAccountManager.current.drop(1).collect { load(forceRefresh = true) } }
+        viewModelScope.launch { activeAccountManager.current.drop(1).collect { load(forceRefresh = true, contextChanged = true) } }
     }
 
     fun setShowPast(show: Boolean) {
         if (_showPast.value == show) return
         _showPast.value = show
-        load(forceRefresh = false)
+        // Same data, other filter: rebuild from the cached list right away instead of flashing.
+        load(forceRefresh = false, contextChanged = true)
     }
 
-    fun load(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            if (forceRefresh || _state.value !is UiState.Success) {
-                _state.value = UiState.Loading
-            }
-            val nameCatalog = repository.getNameCatalog()
-            repository.getHomework(forceRefresh).fold(
-                onSuccess = { data: Pair<List<Homework>, Map<String, String>> ->
-                    val homeworks = data.first
-                    val subjectMap = data.second
-                    val todayInt = LocalDate.now()
-                        .format(DateTimeFormatter.ofPattern("yyyyMMdd")).toInt()
-                    
-                    val items = homeworks
-                        .filter { hw -> 
-                            if (_showPast.value) {
-                                (hw.dueDate ?: 0) < todayInt
-                            } else {
-                                (hw.dueDate ?: Int.MAX_VALUE) >= todayInt
-                            }
-                        }
-                        .sortedBy { hw -> 
-                            if (_showPast.value) -(hw.dueDate ?: 0) else (hw.dueDate ?: Int.MAX_VALUE)
-                        }
-                        .map { hw ->
-                            val shortSubject = subjectMap[hw.lessonId?.toString()]
-                                ?: hw.subject
-                                ?: "Aufgabe"
-                            val subject = nameCatalog.subjectDisplay(shortSubject)
-                            val colorHex = nameCatalog.subjectColorHex(shortSubject)
-                            HomeworkUiItem(hw, subject, hw.id in doneIds, colorHex)
-                        }
-                    _state.value = UiState.Success(items)
-                },
-                onFailure = { e: Throwable ->
-                    _state.value = UiState.Error(e.message ?: "Fehler beim Laden")
+    private fun buildItems(
+        data: Pair<List<Homework>, Map<String, String>>,
+        nameCatalog: com.webuntis.dashboard.model.NameCatalog
+    ): List<HomeworkUiItem> {
+        val homeworks = data.first
+        val subjectMap = data.second
+        val todayInt = LocalDate.now()
+            .format(DateTimeFormatter.ofPattern("yyyyMMdd")).toInt()
+
+        return homeworks
+            .filter { hw ->
+                if (_showPast.value) {
+                    (hw.dueDate ?: 0) < todayInt
+                } else {
+                    (hw.dueDate ?: Int.MAX_VALUE) >= todayInt
                 }
-            )
+            }
+            .sortedBy { hw ->
+                if (_showPast.value) -(hw.dueDate ?: 0) else (hw.dueDate ?: Int.MAX_VALUE)
+            }
+            .map { hw ->
+                val shortSubject = subjectMap[hw.lessonId?.toString()]
+                    ?: hw.subject
+                    ?: "Aufgabe"
+                val subject = nameCatalog.subjectDisplay(shortSubject)
+                val colorHex = nameCatalog.subjectColorHex(shortSubject)
+                HomeworkUiItem(hw, subject, hw.id in doneIds, colorHex)
+            }
+    }
+
+    /**
+     * Stale-while-revalidate. Whatever is already on screen stays; otherwise (first load, or
+     * [contextChanged] = the data now belongs to something else, e.g. other account/tab/mode)
+     * the last known data FOR THE NEW CONTEXT is taken from the cache (memory or disk) and shown
+     * at once — a spinner only appears if there is nothing cached for it. The network refresh
+     * then runs silently behind. A failed refresh never replaces content that is on screen.
+     * [userInitiated] = pull-to-refresh, the only case that shows the swipe spinner.
+     */
+
+    fun load(forceRefresh: Boolean = false, contextChanged: Boolean = false, userInitiated: Boolean = false) {
+        if (contextChanged) loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            if (userInitiated) _refreshing.value = true
+            try {
+                if (contextChanged || _state.value !is UiState.Success) {
+                    val cached = repository.peekHomework()
+                    _state.value = if (cached != null) {
+                        val catalog = repository.peekNameCatalog() ?: com.webuntis.dashboard.model.NameCatalog()
+                        UiState.Success(buildItems(cached, catalog))
+                    } else UiState.Loading
+                }
+
+                val nameCatalog = repository.getNameCatalog()
+                repository.getHomework(forceRefresh).fold(
+                    onSuccess = { data -> _state.value = UiState.Success(buildItems(data, nameCatalog)) },
+                    onFailure = { e: Throwable ->
+                        if (_state.value !is UiState.Success) _state.value = UiState.Error(e.message ?: "Fehler beim Laden")
+                    }
+                )
+            } finally {
+                if (userInitiated) _refreshing.value = false
+            }
         }
     }
 

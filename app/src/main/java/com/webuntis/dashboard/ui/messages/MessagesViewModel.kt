@@ -37,6 +37,10 @@ class MessagesViewModel @Inject constructor(
     private val _draftsState = MutableStateFlow<UiState<List<Message>>>(UiState.Loading)
     val draftsState: StateFlow<UiState<List<Message>>> = _draftsState
 
+    private val _refreshing = MutableStateFlow(false)
+    /** True only during a user-initiated pull-to-refresh (automatic reloads stay invisible). */
+    val refreshing: StateFlow<Boolean> = _refreshing
+
     // ── Unread count ───────────────────────────────────────────────────────────
     private val _unreadCount = MutableStateFlow(0)
     val unreadCount: StateFlow<Int> = _unreadCount
@@ -102,7 +106,10 @@ class MessagesViewModel @Inject constructor(
     }
 
     private fun loadNameCatalog() {
-        viewModelScope.launch { _nameCatalog.value = repository.getNameCatalog() }
+        viewModelScope.launch {
+            repository.peekNameCatalog()?.let { _nameCatalog.value = it }
+            _nameCatalog.value = repository.getNameCatalog()
+        }
     }
 
     // ── Tab switching ──────────────────────────────────────────────────────────
@@ -116,44 +123,77 @@ class MessagesViewModel @Inject constructor(
         }
     }
 
-    fun refresh() = when (_activeTab.value) {
-        MessagesTab.INBOX  -> loadInbox(true)
-        MessagesTab.SENT   -> loadSent(true)
-        MessagesTab.DRAFTS -> loadDrafts(true)
+    /** Automatic refresh of the visible tab (e.g. on returning to the app) — silent. */
+    fun refresh(userInitiated: Boolean = false) = when (_activeTab.value) {
+        MessagesTab.INBOX  -> loadInbox(true, userInitiated)
+        MessagesTab.SENT   -> loadSent(true, userInitiated)
+        MessagesTab.DRAFTS -> loadDrafts(true, userInitiated)
     }
 
     // ── Load ───────────────────────────────────────────────────────────────────
 
-    fun loadInbox(forceRefresh: Boolean = false) {
+    /** Shows the last known list immediately and refreshes silently behind it — see
+     *  TimetableViewModel.loadAll for the meaning of [userInitiated]. */
+    fun loadInbox(forceRefresh: Boolean = false, userInitiated: Boolean = false) {
         viewModelScope.launch {
-            if (forceRefresh || _inboxState.value !is UiState.Success) _inboxState.value = UiState.Loading
-            repository.getMessages(forceRefresh).fold(
-                onSuccess = { _inboxState.value = UiState.Success(it); refreshUnreadCount() },
-                onFailure = { _inboxState.value = UiState.Error(it.message ?: "Fehler") }
-            )
+            if (userInitiated) _refreshing.value = true
+            try {
+                if (_inboxState.value !is UiState.Success) {
+                    repository.peekMessages()?.let { _inboxState.value = UiState.Success(it) }
+                }
+                if (_inboxState.value !is UiState.Success) _inboxState.value = UiState.Loading
+                repository.getMessages(forceRefresh).fold(
+                    onSuccess = { _inboxState.value = UiState.Success(it); refreshUnreadCount() },
+                    onFailure = {
+                        if (_inboxState.value !is UiState.Success) _inboxState.value = UiState.Error(it.message ?: "Fehler")
+                    }
+                )
+            } finally {
+                if (userInitiated) _refreshing.value = false
+            }
         }
     }
 
     // Keep legacy name so nothing else breaks
     fun load(forceRefresh: Boolean = false) = loadInbox(forceRefresh)
 
-    fun loadSent(forceRefresh: Boolean = false) {
+    fun loadSent(forceRefresh: Boolean = false, userInitiated: Boolean = false) {
         viewModelScope.launch {
-            _sentState.value = UiState.Loading
-            repository.getSentMessages(forceRefresh).fold(
-                onSuccess = { _sentState.value = UiState.Success(it) },
-                onFailure = { _sentState.value = UiState.Error(it.message ?: "Fehler") }
-            )
+            if (userInitiated) _refreshing.value = true
+            try {
+                if (_sentState.value !is UiState.Success) {
+                    repository.peekSentMessages()?.let { _sentState.value = UiState.Success(it) }
+                }
+                if (_sentState.value !is UiState.Success) _sentState.value = UiState.Loading
+                repository.getSentMessages(forceRefresh).fold(
+                    onSuccess = { _sentState.value = UiState.Success(it) },
+                    onFailure = {
+                        if (_sentState.value !is UiState.Success) _sentState.value = UiState.Error(it.message ?: "Fehler")
+                    }
+                )
+            } finally {
+                if (userInitiated) _refreshing.value = false
+            }
         }
     }
 
-    fun loadDrafts(forceRefresh: Boolean = false) {
+    fun loadDrafts(forceRefresh: Boolean = false, userInitiated: Boolean = false) {
         viewModelScope.launch {
-            _draftsState.value = UiState.Loading
-            repository.getDrafts(forceRefresh).fold(
-                onSuccess = { _draftsState.value = UiState.Success(it) },
-                onFailure = { _draftsState.value = UiState.Error(it.message ?: "Fehler") }
-            )
+            if (userInitiated) _refreshing.value = true
+            try {
+                if (_draftsState.value !is UiState.Success) {
+                    repository.peekDrafts()?.let { _draftsState.value = UiState.Success(it) }
+                }
+                if (_draftsState.value !is UiState.Success) _draftsState.value = UiState.Loading
+                repository.getDrafts(forceRefresh).fold(
+                    onSuccess = { _draftsState.value = UiState.Success(it) },
+                    onFailure = {
+                        if (_draftsState.value !is UiState.Success) _draftsState.value = UiState.Error(it.message ?: "Fehler")
+                    }
+                )
+            } finally {
+                if (userInitiated) _refreshing.value = false
+            }
         }
     }
 
@@ -247,6 +287,8 @@ class MessagesViewModel @Inject constructor(
             ).fold(
                 onSuccess = {
                     _composeState.value = ComposeState.Sent
+                    // The lists changed server-side: drop the stale copies instead of showing them.
+                    _inboxState.value = UiState.Loading; _sentState.value = UiState.Loading
                     loadInbox(true); loadSent(true)
                 },
                 onFailure = { _composeState.value = ComposeState.Error(it.message ?: "Senden fehlgeschlagen") }
@@ -273,6 +315,7 @@ class MessagesViewModel @Inject constructor(
                 onSuccess = {
                     _composeState.value = ComposeState.Saved
                     clearAttachments()
+                    _draftsState.value = UiState.Loading
                     loadDrafts(true)
                 },
                 onFailure = { _composeState.value = ComposeState.Error(it.message ?: "Speichern fehlgeschlagen") }
@@ -286,9 +329,9 @@ class MessagesViewModel @Inject constructor(
         viewModelScope.launch {
             repository.deleteMessage(msg).onSuccess {
                 when {
-                    msg.isDraft -> loadDrafts(true)
-                    msg.isSent  -> loadSent(true)
-                    else        -> loadInbox(true)
+                    msg.isDraft -> { _draftsState.value = UiState.Loading; loadDrafts(true) }
+                    msg.isSent  -> { _sentState.value   = UiState.Loading; loadSent(true) }
+                    else        -> { _inboxState.value  = UiState.Loading; loadInbox(true) }
                 }
             }
         }

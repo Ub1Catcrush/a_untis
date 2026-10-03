@@ -41,6 +41,10 @@ class AbsencesViewModel @Inject constructor(
     private val _dayGroups = MutableStateFlow<UiState<List<AbsenceListEntry>>>(UiState.Loading)
     val dayGroups: StateFlow<UiState<List<AbsenceListEntry>>> = _dayGroups
 
+    private val _refreshing = MutableStateFlow(false)
+    /** True only during a user-initiated pull-to-refresh (automatic reloads stay invisible). */
+    val refreshing: StateFlow<Boolean> = _refreshing
+
     private val _viewMode = MutableStateFlow(AbsencesViewMode.MESSAGES)
     val viewMode: StateFlow<AbsencesViewMode> = _viewMode
 
@@ -56,6 +60,8 @@ class AbsencesViewModel @Inject constructor(
 
     val isParent: Boolean get() = repository.sessionManager.session?.isParent == true
     val studentId: Int get() = repository.sessionManager.studentId
+
+    private var loadJob: kotlinx.coroutines.Job? = null
 
     init {
         // Re-apply filter whenever raw data or filter changes
@@ -83,7 +89,7 @@ class AbsencesViewModel @Inject constructor(
             appForegroundEvents.onForegroundResume.collect { load(forceRefresh = true); loadMeta() }
         }
         viewModelScope.launch {
-            activeAccountManager.current.drop(1).collect { load(forceRefresh = true); loadMeta() }
+            activeAccountManager.current.drop(1).collect { load(forceRefresh = true, contextChanged = true); loadMeta(contextChanged = true) }
         }
     }
 
@@ -91,29 +97,57 @@ class AbsencesViewModel @Inject constructor(
         _viewMode.value = mode
     }
 
-    fun load(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            if (forceRefresh || _allAbsences.value !is UiState.Success) {
-                _allAbsences.value = UiState.Loading
-                _allAbsenceTimes.value = UiState.Loading
+    /**
+     * Stale-while-revalidate. Whatever is already on screen stays; otherwise (first load, or
+     * [contextChanged] = the data now belongs to something else, e.g. other account/tab/mode)
+     * the last known data FOR THE NEW CONTEXT is taken from the cache (memory or disk) and shown
+     * at once — a spinner only appears if there is nothing cached for it. The network refresh
+     * then runs silently behind. A failed refresh never replaces content that is on screen.
+     * [userInitiated] = pull-to-refresh, the only case that shows the swipe spinner.
+     */
+
+    fun load(forceRefresh: Boolean = false, contextChanged: Boolean = false, userInitiated: Boolean = false) {
+        if (contextChanged) loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            if (userInitiated) _refreshing.value = true
+            try {
+                if (contextChanged || _allAbsences.value !is UiState.Success || _allAbsenceTimes.value !is UiState.Success) {
+                    val cached = repository.peekAbsencesAndTimes()
+                    if (cached != null) {
+                        _allAbsences.value = UiState.Success(cached.first)
+                        _allAbsenceTimes.value = UiState.Success(cached.second)
+                    } else {
+                        _allAbsences.value = UiState.Loading
+                        _allAbsenceTimes.value = UiState.Loading
+                    }
+                }
+                // Both lists come from the same underlying request (see
+                // WebUntisRepository.fetchAbsencesAndTimes) — fetching them back-to-back only
+                // hits the network once, the second call is served from the shared cache entry
+                // the first one just (re-)populated.
+                repository.getAbsences(forceRefresh).fold(
+                    onSuccess = { _allAbsences.value = UiState.Success(it) },
+                    onFailure = {
+                        if (_allAbsences.value !is UiState.Success)
+                            _allAbsences.value = UiState.Error(it.message ?: "Fehler beim Laden")
+                    }
+                )
+                repository.getAbsenceTimes(forceRefresh = false).fold(
+                    onSuccess = { _allAbsenceTimes.value = UiState.Success(it) },
+                    onFailure = {
+                        if (_allAbsenceTimes.value !is UiState.Success)
+                            _allAbsenceTimes.value = UiState.Error(it.message ?: "Fehler beim Laden")
+                    }
+                )
+            } finally {
+                if (userInitiated) _refreshing.value = false
             }
-            // Both lists come from the same underlying request (see
-            // WebUntisRepository.fetchAbsencesAndTimes) — fetching them back-to-back only
-            // hits the network once, the second call is served from the shared cache entry
-            // the first one just (re-)populated.
-            repository.getAbsences(forceRefresh).fold(
-                onSuccess = { _allAbsences.value = UiState.Success(it) },
-                onFailure = { _allAbsences.value = UiState.Error(it.message ?: "Fehler beim Laden") }
-            )
-            repository.getAbsenceTimes(forceRefresh = false).fold(
-                onSuccess = { _allAbsenceTimes.value = UiState.Success(it) },
-                onFailure = { _allAbsenceTimes.value = UiState.Error(it.message ?: "Fehler beim Laden") }
-            )
         }
     }
 
-    private fun loadMeta() {
+    private fun loadMeta(contextChanged: Boolean = false) {
         viewModelScope.launch {
+            if (contextChanged || _meta.value == null) _meta.value = repository.peekAbsencesMeta()
             repository.getAbsencesMeta().onSuccess { _meta.value = it }
         }
     }
