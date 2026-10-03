@@ -8,7 +8,7 @@ import retrofit2.http.Streaming
 import retrofit2.http.Url
 
 interface GithubService {
-    @GET("repos/Ub1Catcrush/webuntis_alternative/releases/latest")
+    @GET("repos/Ub1Catcrush/a_untis/releases/latest")
     suspend fun getLatestRelease(): Response<GithubRelease>
 
     @GET
