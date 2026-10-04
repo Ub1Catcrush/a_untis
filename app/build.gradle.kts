@@ -37,10 +37,13 @@ android {
     }
 
     // One APK per CPU architecture plus one universal APK containing all of them.
-    // Only affects APK builds; AABs always contain every ABI (Play splits them on delivery).
+    // Must stay OFF while a bundle (AAB) is built: an AAB always contains every ABI anyway
+    // (Play splits it on delivery), and with APK ABI splits enabled the bundle tasks fail with
+    // "Sequence contains more than one matching element" (PerModuleBundleTask.getResourcesFile).
+    val buildsBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
     splits {
         abi {
-            isEnable = true
+            isEnable = !buildsBundle
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true
