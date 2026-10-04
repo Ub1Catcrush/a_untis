@@ -21,6 +21,14 @@
     <string name="login_username_hint">Benutzername</string>
     <string name="login_password_hint">Passwort</string>
     <string name="login_password_saved_hint">Passwort gespeichert</string>
+    <string name="login_school_search_hint">Schule suchen (Name oder Ort)</string>
+    <string name="login_school_search_helper">Ab 3 Zeichen – Server und Kurzname werden automatisch ausgefüllt</string>
+    <string name="login_school_search_loading">Suche…</string>
+    <string name="login_school_search_empty">Keine Schule gefunden – Server und Kurzname unten manuell eintragen</string>
+    <string name="login_school_search_too_many">Keine Ergebnisse oder zu viele Treffer – Suchbegriff genauer eingeben</string>
+    <string name="login_school_search_error">Suche nicht möglich – Server und Kurzname unten manuell eintragen</string>
+    <string name="login_school_search_selected">Schule übernommen – nur noch Benutzername und Passwort eintragen</string>
+    <string name="login_manual_entry">Schuldaten</string>
     <string name="login_button">Anmelden</string>
     <string name="login_data_notice">Deine Zugangsdaten werden verschlüsselt auf dem Gerät gespeichert und nicht übertragen.</string>
     <string name="hint_sso">Hinweis: Falls du dich über Schulportal, Microsoft- oder Google-Login anmeldest, werden direkte WebUntis-Zugangsdaten benötigt.</string>
@@ -217,16 +225,29 @@
     <string name="settings_second_no_accounts">Noch keine weiteren Kinder hinzugefügt.</string>
 
     <!-- Display settings -->
-    <string name="settings_long_names_section">Klarnamen anzeigen</string>
+    <string name="settings_week_first_line">Erste Zeile zeigt</string>
+    <string name="settings_week_second_line_label">Zweite Zeile zeigt</string>
+    <string name="settings_week_view_second_line_subject">Fach</string>
+    <string name="settings_week_view_second_line_teacher">Lehrkraft</string>
+    <string name="settings_week_view_second_line_room">Raum</string>
+    <string name="settings_week_view_second_line_none">Nichts</string>
+    <string name="settings_show_short_teacher_in_parens">Kürzel in Klammern anzeigen (z.B. „Mustermann (MUS)“)</string>
+    <string name="settings_show_short_room_in_parens">Kürzel in Klammern anzeigen (z.B. „Physikraum (PH1)“)</string>
+    <string name="settings_show_short_sender_in_parens">Kürzel in Klammern anzeigen (z.B. „Mustermann (MUS)“)</string>
+    <string name="settings_names_hint">Pro Bildschirm einstellbar – antippen zum Aufklappen.</string>
+    <string name="settings_names_screen_day">Tagesansicht</string>
+    <string name="settings_names_screen_week">Wochenansicht</string>
+    <string name="settings_names_screen_lesson_content">Unterrichtsinhalte</string>
+    <string name="settings_names_screen_classbook">Klassenbuch</string>
+    <string name="settings_names_screen_homework">Hausaufgaben</string>
+    <string name="settings_names_screen_messages">Nachrichten</string>
+    <string name="settings_names_screen_events">Termine &amp; Prüfungen</string>
+    <string name="settings_names_teacher_messages">Absender/Empfänger ausschreiben</string>
+    <string name="settings_long_names_section">Klar- und Kurznamen</string>
     <string name="settings_show_long_subjects">Fachname ausschreiben (z.B. „Mathematik\")</string>
     <string name="settings_show_long_teachers">Lehrername ausschreiben (z.B. „Mustermann\")</string>
     <string name="settings_show_long_rooms">Raumname ausschreiben (z.B. „Klassenraum 7c\")</string>
     <string name="settings_show_short_in_parens">Kürzel in Klammern anzeigen (z.B. „Mathematik (M)\")</string>
-    <string name="settings_use_compact_week_view">Wochenansicht kompakt nebeneinander</string>
-    <string name="settings_week_view_second_line_label">Wochenansicht: 2. Zeile der Kachel zeigt</string>
-    <string name="settings_week_view_second_line_subject">Fach (Klarname)</string>
-    <string name="settings_week_view_second_line_teacher">Lehrkraft (Klarname)</string>
-    <string name="settings_week_view_second_line_none">Nichts</string>
 
     <string name="lesson_content_load_more">Weitere Tage laden</string>
     <string name="lesson_content_group_by_day">Tag</string>

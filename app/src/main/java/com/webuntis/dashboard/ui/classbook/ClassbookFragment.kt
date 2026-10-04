@@ -40,6 +40,15 @@ class ClassbookFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val adapter = ClassbookAdapter()
+        adapter.subjectStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.CLASSBOOK, com.webuntis.dashboard.model.NameType.SUBJECT)
+        adapter.teacherStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.CLASSBOOK, com.webuntis.dashboard.model.NameType.TEACHER)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                viewModel.nameCatalog.collect { adapter.nameCatalog = it }
+            }
+        }
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
         binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true, userInitiated = true) }
@@ -109,20 +118,36 @@ class ClassbookFragment : Fragment() {
 
 class ClassbookAdapter : ListAdapter<ClassbookEntry, ClassbookAdapter.VH>(Diff) {
 
+    var subjectStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle()
+    var teacherStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle()
+    var nameCatalog: com.webuntis.dashboard.model.NameCatalog = com.webuntis.dashboard.model.NameCatalog()
+        set(value) { field = value; notifyDataSetChanged() }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val b = ItemClassbookBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return VH(b)
     }
 
-    override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(getItem(position))
+    override fun onBindViewHolder(holder: VH, position: Int) =
+        holder.bind(getItem(position), subjectStyle, teacherStyle, nameCatalog)
 
     class VH(private val b: ItemClassbookBinding) : RecyclerView.ViewHolder(b.root) {
-        fun bind(entry: ClassbookEntry) {
-            b.textSubject.text = entry.displaySubjectOrElement
+        fun bind(
+            entry: ClassbookEntry,
+            subjectStyle: com.webuntis.dashboard.model.NameStyle,
+            teacherStyle: com.webuntis.dashboard.model.NameStyle,
+            catalog: com.webuntis.dashboard.model.NameCatalog
+        ) {
+            // Short form keeps the old behaviour (elementName, then the short code); only an
+            // explicit "long" setting swaps in the catalog's spelled-out name.
+            b.textSubject.text = if (subjectStyle.long && !entry.subject.isNullOrBlank())
+                catalog.subjectDisplay(entry.subject, subjectStyle)
+            else entry.displaySubjectOrElement
             b.textContent.text = entry.displayText
             b.textDate.text = entry.dateFormatted ?: ""
-            b.textTeacher.text = entry.teacher ?: ""
-            b.textTeacher.isVisible = !entry.teacher.isNullOrEmpty()
+            val teacherText = catalog.teacherDisplay(entry.teacher, teacherStyle)
+            b.textTeacher.text = teacherText
+            b.textTeacher.isVisible = teacherText.isNotEmpty()
 
             val cat = entry.displayCategory.lowercase()
             val (labelRes, bgRes, fgRes) = when {

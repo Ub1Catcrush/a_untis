@@ -124,16 +124,40 @@ class TimetableViewModel @Inject constructor(
     private val _absences = MutableStateFlow<List<Absence>>(emptyList())
     val absences: StateFlow<List<Absence>> = _absences
 
-    val showLongSubjects: Boolean get() = repository.sessionManager.showLongSubjects
-    val showLongTeachers: Boolean get() = repository.sessionManager.showLongTeachers
-    val showLongRooms:    Boolean get() = repository.sessionManager.showLongRooms
-    val showShortSubjectInParens: Boolean get() = repository.sessionManager.showShortSubjectInParens
-    val showShortTeacherInParens: Boolean get() = repository.sessionManager.showShortTeacherInParens
-    val showShortRoomInParens:    Boolean get() = repository.sessionManager.showShortRoomInParens
+    private fun dayStyle(type: com.webuntis.dashboard.model.NameType) =
+        repository.sessionManager.nameStyle(com.webuntis.dashboard.model.NameScreen.DAY_VIEW, type)
+    val showLongSubjects: Boolean get() = dayStyle(com.webuntis.dashboard.model.NameType.SUBJECT).long
+    val showLongTeachers: Boolean get() = dayStyle(com.webuntis.dashboard.model.NameType.TEACHER).long
+    val showLongRooms:    Boolean get() = dayStyle(com.webuntis.dashboard.model.NameType.ROOM).long
+    val showShortSubjectInParens: Boolean get() = dayStyle(com.webuntis.dashboard.model.NameType.SUBJECT).shortInParens
+    val showShortTeacherInParens: Boolean get() = dayStyle(com.webuntis.dashboard.model.NameType.TEACHER).shortInParens
+    val showShortRoomInParens:    Boolean get() = dayStyle(com.webuntis.dashboard.model.NameType.ROOM).shortInParens
+    /** Week view: what the first (bold) tile line shows… */
+    val weekViewFirstLine: com.webuntis.dashboard.api.SessionManager.WeekViewLine
+        get() = repository.sessionManager.weekViewFirstLine
+    /** …and how that text is written. */
+    val weekFirstLineStyle: com.webuntis.dashboard.model.NameStyle
+        get() = lineStyle(com.webuntis.dashboard.model.NameScreen.WEEK_VIEW, weekViewFirstLine)
+
+    private fun lineStyle(
+        screen: com.webuntis.dashboard.model.NameScreen,
+        mode: com.webuntis.dashboard.api.SessionManager.WeekViewLine
+    ): com.webuntis.dashboard.model.NameStyle {
+        val type = when (mode) {
+            com.webuntis.dashboard.api.SessionManager.WeekViewLine.SUBJECT -> com.webuntis.dashboard.model.NameType.SUBJECT
+            com.webuntis.dashboard.api.SessionManager.WeekViewLine.TEACHER -> com.webuntis.dashboard.model.NameType.TEACHER
+            com.webuntis.dashboard.api.SessionManager.WeekViewLine.ROOM    -> com.webuntis.dashboard.model.NameType.ROOM
+            com.webuntis.dashboard.api.SessionManager.WeekViewLine.NONE    -> return com.webuntis.dashboard.model.NameStyle()
+        }
+        return repository.sessionManager.nameStyle(screen, type)
+    }
     val useCompactWeekView: Boolean get() = repository.sessionManager.useCompactWeekView
 
-    val weekViewSecondLine: com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine
+    val weekViewSecondLine: com.webuntis.dashboard.api.SessionManager.WeekViewLine
         get() = repository.sessionManager.weekViewSecondLine
+    /** How the text of the second tile line is written (style of whatever it currently shows). */
+    val weekSecondLineStyle: com.webuntis.dashboard.model.NameStyle
+        get() = lineStyle(com.webuntis.dashboard.model.NameScreen.WEEK_VIEW_LINE2, weekViewSecondLine)
 
     /** Switches between the day and the week grid directly from the timetable screen. */
     fun toggleUseWeekView() {

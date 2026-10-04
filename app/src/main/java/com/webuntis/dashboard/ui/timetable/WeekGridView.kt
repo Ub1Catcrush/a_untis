@@ -75,13 +75,28 @@ class WeekGridView @JvmOverloads constructor(
 
     /** Cached args so a re-layout (e.g. orientation change) can rebuild with the same data. */
     private var pendingDays: List<SchoolDay> = emptyList()
-    private var pendingSecondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine =
-        com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine.SUBJECT_LONG_NAME
+    private var pendingSecondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewLine =
+        com.webuntis.dashboard.api.SessionManager.WeekViewLine.SUBJECT
+
+    /** How the subject on the first line of every tile is written (short / long / long + short). */
+    private var firstLineMode = com.webuntis.dashboard.api.SessionManager.WeekViewLine.SUBJECT
+    private var firstLineStyle = com.webuntis.dashboard.model.NameStyle()
+    private var secondLineStyle = com.webuntis.dashboard.model.NameStyle(long = true)
+
+    /** Text of the first (bold) tile line, per the configured content + name style. */
+    private fun firstLineText(lesson: Lesson): String =
+        lineText(lesson, firstLineMode, firstLineStyle).ifBlank { lesson.subjectName }
 
     fun submit(
         days: List<SchoolDay>,
-        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine
+        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewLine,
+        firstLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewLine = com.webuntis.dashboard.api.SessionManager.WeekViewLine.SUBJECT,
+        firstLineStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle(),
+        secondLineStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle(long = true)
     ) {
+        this.firstLineMode = firstLineMode
+        this.firstLineStyle = firstLineStyle
+        this.secondLineStyle = secondLineStyle
         pendingDays = days
         pendingSecondLineMode = secondLineMode
         // Defer until we actually know our width, so day columns can fill the full screen width.
@@ -92,7 +107,7 @@ class WeekGridView @JvmOverloads constructor(
 
     private fun buildGrid(
         days: List<SchoolDay>,
-        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine
+        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewLine
     ) {
         binding.weekDayColumns.removeAllViews()
         binding.weekGutterLabels.removeAllViews()
@@ -128,9 +143,9 @@ class WeekGridView @JvmOverloads constructor(
         // exactly the same size. ──
         val tilePaddingPx = (TILE_H_PADDING_DP * density).roundToInt()
         val textAvailableWidthPx = (dayColWidthPx - tilePaddingPx).coerceAtLeast(1).toFloat()
-        val shortNames = allLessons.map { it.subjectName }.distinct()
+        val shortNames = allLessons.map { firstLineText(it) }.distinct()
         val shortSizeSp = computeUniformTextSizeSp(shortNames, textAvailableWidthPx, SHORT_MAX_SP, SHORT_MIN_SP, bold = true)
-        val longSizeSp = if (secondLineMode == com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine.NONE) {
+        val longSizeSp = if (secondLineMode == com.webuntis.dashboard.api.SessionManager.WeekViewLine.NONE) {
             LONG_MAX_SP
         } else {
             val longNames = allLessons.map { secondLineText(it, secondLineMode) }.distinct()
@@ -167,13 +182,18 @@ class WeekGridView @JvmOverloads constructor(
     }
 
     /** The text for a tile's second line, per the configured mode ("" when NONE — caller hides the view). */
-    private fun secondLineText(
+    private fun secondLineText(lesson: Lesson, mode: com.webuntis.dashboard.api.SessionManager.WeekViewLine): String =
+        lineText(lesson, mode, secondLineStyle)
+
+    private fun lineText(
         lesson: Lesson,
-        mode: com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine
+        mode: com.webuntis.dashboard.api.SessionManager.WeekViewLine,
+        style: com.webuntis.dashboard.model.NameStyle
     ): String = when (mode) {
-        com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine.SUBJECT_LONG_NAME -> lesson.subjectLongName
-        com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine.TEACHER_LONG_NAME -> lesson.teacherLongNames
-        com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine.NONE -> ""
+        com.webuntis.dashboard.api.SessionManager.WeekViewLine.SUBJECT -> lesson.displaySubject(style.long, style.shortInParens)
+        com.webuntis.dashboard.api.SessionManager.WeekViewLine.TEACHER -> lesson.displayTeachers(style.long, style.shortInParens)
+        com.webuntis.dashboard.api.SessionManager.WeekViewLine.ROOM    -> lesson.displayRooms(style.long, style.shortInParens)
+        com.webuntis.dashboard.api.SessionManager.WeekViewLine.NONE    -> ""
     }
 
     /**
@@ -238,7 +258,7 @@ class WeekGridView @JvmOverloads constructor(
         minTileHeightPx: Int,
         tileGapPx: Int,
         pxPerMin: Float,
-        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine,
+        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewLine,
         shortSizeSp: Float,
         longSizeSp: Float
     ): View {
@@ -303,7 +323,7 @@ class WeekGridView @JvmOverloads constructor(
         b: ItemWeekLessonBinding,
         lesson: Lesson,
         isPast: Boolean,
-        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine,
+        secondLineMode: com.webuntis.dashboard.api.SessionManager.WeekViewLine,
         shortSizeSp: Float,
         longSizeSp: Float
     ) {
@@ -315,10 +335,10 @@ class WeekGridView @JvmOverloads constructor(
             b.root, com.google.android.material.R.attr.colorOnSurfaceVariant
         )
 
-        b.textSubjectShort.text = lesson.subjectName
+        b.textSubjectShort.text = firstLineText(lesson)
         b.textSubjectShort.textSize = shortSizeSp
 
-        if (secondLineMode == com.webuntis.dashboard.api.SessionManager.WeekViewSecondLine.NONE) {
+        if (secondLineMode == com.webuntis.dashboard.api.SessionManager.WeekViewLine.NONE) {
             b.textSubjectLong.visibility = View.GONE
         } else {
             b.textSubjectLong.visibility = View.VISIBLE

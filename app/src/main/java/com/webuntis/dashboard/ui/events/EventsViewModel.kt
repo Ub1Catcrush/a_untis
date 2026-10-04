@@ -19,6 +19,8 @@ class EventsViewModel @Inject constructor(
     val activeAccountManager: com.webuntis.dashboard.api.ActiveAccountManager
 ) : ViewModel() {
 
+    val sessionManager: com.webuntis.dashboard.api.SessionManager get() = repository.sessionManager
+
     private val _state = MutableStateFlow<UiState<List<SchoolEvent>>>(UiState.Loading)
     val state: StateFlow<UiState<List<SchoolEvent>>> = _state
 

@@ -1,6 +1,9 @@
 package com.webuntis.dashboard.ui.settings
 
 import android.os.Bundle
+import android.widget.TextView
+import android.widget.LinearLayout
+import android.view.View
 import android.view.*
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
@@ -12,6 +15,9 @@ import androidx.navigation.fragment.findNavController
 import com.webuntis.dashboard.BuildConfig
 import com.webuntis.dashboard.R
 import com.webuntis.dashboard.api.NotificationCategory
+import com.webuntis.dashboard.model.NameType
+import com.webuntis.dashboard.model.NameStyle
+import com.webuntis.dashboard.model.NameScreen
 import com.webuntis.dashboard.api.SessionManager
 import com.webuntis.dashboard.api.UpdateManager
 import com.webuntis.dashboard.databinding.FragmentSettingsBinding
@@ -84,6 +90,7 @@ class SettingsFragment : Fragment() {
                     }
                     bindCurrentValues()
                     bindNotificationCategories()
+                    buildNameStyleSettings()
                     if (result.secondUpdated) renderAdditionalAccountsList()
                 }
                 is com.webuntis.dashboard.api.SessionManager.ImportResult.Error ->
@@ -134,62 +141,8 @@ class SettingsFragment : Fragment() {
             }
         )
 
-        // ── Compact Week View toggle ──────────────────────────────────────────
-        binding.switchCompactWeekView.isChecked = loginViewModel.sessionManager.useCompactWeekView
-        binding.switchCompactWeekView.setOnCheckedChangeListener { _, checked ->
-            loginViewModel.sessionManager.useCompactWeekView = checked
-            // No need to clear cache, just refresh UI
-            loginViewModel.refreshTimetable()
-        }
-
-        // ── Background change-check notifications ───────────────────────────────
-        binding.switchNotificationsEnabled.isChecked = loginViewModel.sessionManager.notificationsEnabled
-        binding.switchNotificationsEnabled.setOnCheckedChangeListener { _, checked ->
-            if (!checked) {
-                loginViewModel.sessionManager.notificationsEnabled = false
-                com.webuntis.dashboard.api.NotificationScheduler.stop(requireContext())
-                updateNotificationCategoriesEnabled()
-                return@setOnCheckedChangeListener
-            }
-            // Android 13+ requires the runtime POST_NOTIFICATIONS permission before any
-            // notification (including the ones PlanChangeCheckWorker posts) can show at all.
-            val needsPermission = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
-                androidx.core.content.ContextCompat.checkSelfPermission(
-                    requireContext(), android.Manifest.permission.POST_NOTIFICATIONS
-                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-            if (needsPermission) {
-                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                // Launcher's callback flips this back on success/off on denial — don't
-                // flip sessionManager's flag until we actually know the outcome.
-            } else {
-                loginViewModel.sessionManager.notificationsEnabled = true
-                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext())
-                updateBatteryOptimizationUi()
-                updateNotificationCategoriesEnabled()
-            }
-        }
-        bindNotificationCategories()
-        binding.btnNotificationChannels.setOnClickListener { openSystemNotificationSettings() }
-        updateBatteryOptimizationUi()
-        binding.btnBatteryOptimization.setOnClickListener { requestIgnoreBatteryOptimizations() }
-        binding.btnAutostart.setOnClickListener { requestAutostartPermission() }
         binding.btnCheckNow.setOnClickListener { runCheckNow() }
         binding.btnShowChanges.setOnClickListener { findNavController().navigate(R.id.recentChangesDialogFragment) }
-
-        // ── Week view: what the tile's second line shows ───────────────────────
-        when (loginViewModel.sessionManager.weekViewSecondLine) {
-            SessionManager.WeekViewSecondLine.SUBJECT_LONG_NAME -> binding.radioWeekSecondLineSubject.isChecked = true
-            SessionManager.WeekViewSecondLine.TEACHER_LONG_NAME -> binding.radioWeekSecondLineTeacher.isChecked = true
-            SessionManager.WeekViewSecondLine.NONE              -> binding.radioWeekSecondLineNone.isChecked = true
-        }
-        binding.radioGroupWeekViewSecondLine.setOnCheckedChangeListener { _, checkedId ->
-            loginViewModel.sessionManager.weekViewSecondLine = when (checkedId) {
-                R.id.radio_week_second_line_teacher -> SessionManager.WeekViewSecondLine.TEACHER_LONG_NAME
-                R.id.radio_week_second_line_none    -> SessionManager.WeekViewSecondLine.NONE
-                else                                 -> SessionManager.WeekViewSecondLine.SUBJECT_LONG_NAME
-            }
-            loginViewModel.refreshTimetable()
-        }
 
         // ── Unterrichtsinhalte: default day-window ──────────────────────────────
         when (loginViewModel.sessionManager.lessonContentDefaultDays) {
@@ -207,46 +160,8 @@ class SettingsFragment : Fragment() {
             }
         }
 
-        // ── Long names toggles (per type) ─────────────────────────────────
-        binding.switchLongSubjects.isChecked = loginViewModel.sessionManager.showLongSubjects
-        binding.switchLongSubjects.setOnCheckedChangeListener { _, checked ->
-            loginViewModel.sessionManager.showLongSubjects = checked
-            binding.switchShortSubjectsInParens.isEnabled = checked
-            loginViewModel.clearDataCaches(); loginViewModel.refreshTimetable()
-        }
-        binding.switchLongTeachers.isChecked = loginViewModel.sessionManager.showLongTeachers
-        binding.switchLongTeachers.setOnCheckedChangeListener { _, checked ->
-            loginViewModel.sessionManager.showLongTeachers = checked
-            binding.switchShortTeachersInParens.isEnabled = checked
-            loginViewModel.clearDataCaches(); loginViewModel.refreshTimetable()
-        }
-        binding.switchLongRooms.isChecked = loginViewModel.sessionManager.showLongRooms
-        binding.switchLongRooms.setOnCheckedChangeListener { _, checked ->
-            loginViewModel.sessionManager.showLongRooms = checked
-            binding.switchShortRoomsInParens.isEnabled = checked
-            loginViewModel.clearDataCaches(); loginViewModel.refreshTimetable()
-        }
-
-        // ── "Show abbreviation in parentheses" — only meaningful while the matching
-        //    long-name switch above is on, so each starts disabled unless its parent is checked.
-        binding.switchShortSubjectsInParens.isChecked = loginViewModel.sessionManager.showShortSubjectInParens
-        binding.switchShortSubjectsInParens.isEnabled = loginViewModel.sessionManager.showLongSubjects
-        binding.switchShortSubjectsInParens.setOnCheckedChangeListener { _, checked ->
-            loginViewModel.sessionManager.showShortSubjectInParens = checked
-            loginViewModel.clearDataCaches(); loginViewModel.refreshTimetable()
-        }
-        binding.switchShortTeachersInParens.isChecked = loginViewModel.sessionManager.showShortTeacherInParens
-        binding.switchShortTeachersInParens.isEnabled = loginViewModel.sessionManager.showLongTeachers
-        binding.switchShortTeachersInParens.setOnCheckedChangeListener { _, checked ->
-            loginViewModel.sessionManager.showShortTeacherInParens = checked
-            loginViewModel.clearDataCaches(); loginViewModel.refreshTimetable()
-        }
-        binding.switchShortRoomsInParens.isChecked = loginViewModel.sessionManager.showShortRoomInParens
-        binding.switchShortRoomsInParens.isEnabled = loginViewModel.sessionManager.showLongRooms
-        binding.switchShortRoomsInParens.setOnCheckedChangeListener { _, checked ->
-            loginViewModel.sessionManager.showShortRoomInParens = checked
-            loginViewModel.clearDataCaches(); loginViewModel.refreshTimetable()
-        }
+        // ── Klar-/Kurznamen, separately per screen ────────────────────────────
+        buildNameStyleSettings()
 
         // ── Cache TTL slider ──────────────────────────────────────────────────
         fun cacheTtlLabel(min: Int) = if (min == 0)
@@ -392,6 +307,173 @@ class SettingsFragment : Fragment() {
             })
         } catch (e: Exception) {
             android.widget.Toast.makeText(requireContext(), getString(R.string.settings_notifications_system_failed), android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Builds one collapsible block per screen with, per name type, a "spell out" switch and
+     *  (while that is on) a "show abbreviation in parentheses" switch below it. The week view
+     *  block additionally lets you pick what the second tile line shows and styles that line. */
+    private fun buildNameStyleSettings() {
+        val container = binding.namesContainer
+        container.removeAllViews()
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+        val mutedColor = com.google.android.material.color.MaterialColors.getColor(
+            container, com.google.android.material.R.attr.colorOnSurfaceVariant)
+        val sm = loginViewModel.sessionManager
+
+        fun screenTitle(screen: NameScreen) = getString(when (screen) {
+            NameScreen.DAY_VIEW        -> R.string.settings_names_screen_day
+            NameScreen.WEEK_VIEW,
+            NameScreen.WEEK_VIEW_LINE2 -> R.string.settings_names_screen_week
+            NameScreen.LESSON_CONTENT  -> R.string.settings_names_screen_lesson_content
+            NameScreen.CLASSBOOK       -> R.string.settings_names_screen_classbook
+            NameScreen.HOMEWORK        -> R.string.settings_names_screen_homework
+            NameScreen.MESSAGES        -> R.string.settings_names_screen_messages
+            NameScreen.EVENTS          -> R.string.settings_names_screen_events
+        })
+
+        fun longLabel(screen: NameScreen, type: NameType) = getString(when {
+            screen == NameScreen.MESSAGES -> R.string.settings_names_teacher_messages
+            type == NameType.SUBJECT      -> R.string.settings_show_long_subjects
+            type == NameType.TEACHER      -> R.string.settings_show_long_teachers
+            else                          -> R.string.settings_show_long_rooms
+        })
+
+        /** The abbreviation example has to match what is being named (subject vs. teacher vs. room). */
+        fun parensLabel(screen: NameScreen, type: NameType) = getString(when {
+            screen == NameScreen.MESSAGES -> R.string.settings_show_short_sender_in_parens
+            type == NameType.SUBJECT      -> R.string.settings_show_short_in_parens
+            type == NameType.TEACHER      -> R.string.settings_show_short_teacher_in_parens
+            else                          -> R.string.settings_show_short_room_in_parens
+        })
+
+        /** Adds the "spell out" + "abbreviation in parentheses" switch pair for one name type. */
+        fun addStyleSwitches(parent: LinearLayout, screen: NameScreen, type: NameType) {
+            val style = sm.nameStyle(screen, type)
+            val parens = com.google.android.material.materialswitch.MaterialSwitch(ctx).apply {
+                text = parensLabel(screen, type)
+                textSize = 13f
+                setTextColor(mutedColor)
+                minHeight = dp(40)
+                isChecked = style.shortInParens
+                isEnabled = style.long
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(16) }
+            }
+            val long = com.google.android.material.materialswitch.MaterialSwitch(ctx).apply {
+                text = longLabel(screen, type)
+                textSize = 14f
+                minHeight = dp(48)
+                isChecked = style.long
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            fun save() {
+                sm.setNameStyle(screen, type, NameStyle(long.isChecked, parens.isChecked))
+                loginViewModel.clearDataCaches(); loginViewModel.refreshTimetable()
+            }
+            long.setOnCheckedChangeListener { _, checked -> parens.isEnabled = checked; save() }
+            parens.setOnCheckedChangeListener { _, _ -> save() }
+            parent.addView(long)
+            parent.addView(parens)
+        }
+
+        fun sectionLabel(text: String) = TextView(ctx).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(mutedColor)
+            setPadding(0, dp(8), 0, dp(2))
+        }
+
+        /** "What does this tile line show" radio group + the style switches of the chosen content. */
+        fun addLineControls(
+            body: LinearLayout,
+            label: Int,
+            styleScreen: NameScreen,
+            allowNone: Boolean,
+            get: () -> SessionManager.WeekViewLine,
+            set: (SessionManager.WeekViewLine) -> Unit
+        ) {
+            body.addView(sectionLabel(getString(label)))
+            val lineStyles = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+
+            fun rebuildLineStyles(mode: SessionManager.WeekViewLine) {
+                lineStyles.removeAllViews()
+                val type = when (mode) {
+                    SessionManager.WeekViewLine.SUBJECT -> NameType.SUBJECT
+                    SessionManager.WeekViewLine.TEACHER -> NameType.TEACHER
+                    SessionManager.WeekViewLine.ROOM    -> NameType.ROOM
+                    SessionManager.WeekViewLine.NONE    -> return
+                }
+                addStyleSwitches(lineStyles, styleScreen, type)
+            }
+
+            val options = listOfNotNull(
+                SessionManager.WeekViewLine.SUBJECT to R.string.settings_week_view_second_line_subject,
+                SessionManager.WeekViewLine.TEACHER to R.string.settings_week_view_second_line_teacher,
+                SessionManager.WeekViewLine.ROOM    to R.string.settings_week_view_second_line_room,
+                if (allowNone) SessionManager.WeekViewLine.NONE to R.string.settings_week_view_second_line_none else null
+            )
+            val group = android.widget.RadioGroup(ctx).apply { orientation = android.widget.RadioGroup.VERTICAL }
+            val ids = options.associate { (mode, text) ->
+                val rb = android.widget.RadioButton(ctx).apply {
+                    id = View.generateViewId()
+                    this.text = getString(text)
+                    minHeight = dp(40)
+                }
+                group.addView(rb)
+                rb.id to mode
+            }
+            val current = get()
+            ids.entries.first { it.value == current }.key.let { group.check(it) }
+            group.setOnCheckedChangeListener { _, checkedId ->
+                val mode = ids[checkedId] ?: return@setOnCheckedChangeListener
+                set(mode)
+                rebuildLineStyles(mode)
+                loginViewModel.refreshTimetable()
+            }
+            body.addView(group)
+            rebuildLineStyles(current)
+            body.addView(lineStyles)
+        }
+
+        fun addWeekViewControls(body: LinearLayout) {
+            addLineControls(body, R.string.settings_week_first_line, NameScreen.WEEK_VIEW, allowNone = false,
+                get = { sm.weekViewFirstLine }, set = { sm.weekViewFirstLine = it })
+            addLineControls(body, R.string.settings_week_second_line_label, NameScreen.WEEK_VIEW_LINE2, allowNone = true,
+                get = { sm.weekViewSecondLine }, set = { sm.weekViewSecondLine = it })
+        }
+
+        NameScreen.values().forEach { screen ->
+            if (screen == NameScreen.WEEK_VIEW_LINE2) return@forEach   // part of the week-view block
+            val title = screenTitle(screen)
+            val body = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+                setPadding(dp(8), 0, 0, dp(4))
+            }
+            val header = TextView(ctx).apply {
+                text = "▸  $title"
+                textSize = 15f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                minHeight = dp(44)
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    val open = body.visibility != View.VISIBLE
+                    body.visibility = if (open) View.VISIBLE else View.GONE
+                    text = (if (open) "▾  " else "▸  ") + title
+                }
+            }
+            if (screen == NameScreen.WEEK_VIEW) addWeekViewControls(body)
+            else screen.types.forEach { type -> addStyleSwitches(body, screen, type) }
+            container.addView(header)
+            container.addView(body)
         }
     }
 

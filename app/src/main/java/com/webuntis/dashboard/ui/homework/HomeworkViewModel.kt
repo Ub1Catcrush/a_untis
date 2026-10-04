@@ -93,7 +93,11 @@ class HomeworkViewModel @Inject constructor(
                 val shortSubject = subjectMap[hw.lessonId?.toString()]
                     ?: hw.subject
                     ?: "Aufgabe"
-                val subject = nameCatalog.subjectDisplay(shortSubject)
+                val subject = nameCatalog.subjectDisplay(
+                    shortSubject,
+                    repository.sessionManager.nameStyle(
+                        com.webuntis.dashboard.model.NameScreen.HOMEWORK, com.webuntis.dashboard.model.NameType.SUBJECT)
+                )
                 val colorHex = nameCatalog.subjectColorHex(shortSubject)
                 HomeworkUiItem(hw, subject, hw.id in doneIds, colorHex)
             }

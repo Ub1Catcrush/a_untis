@@ -46,7 +46,15 @@ class UpdateManager @Inject constructor(
                 val currentVersion = BuildConfig.VERSION_NAME
 
                 val hasUpdate = isNewerVersion(currentVersion, latestVersion)
-                val apkAsset = release.assets.firstOrNull { it.name.equals("app-release-signed.apk") }
+                // Release assets are named a_untis_release_signed[_<abi>].apk (see the GitHub
+                // workflow): prefer the APK for this device's own architecture, then the
+                // universal one, then the legacy name (releases still ship it as an alias for old app versions).
+                val apkAsset = android.os.Build.SUPPORTED_ABIS
+                    .firstNotNullOfOrNull { abi ->
+                        release.assets.firstOrNull { it.name == "a_untis_release_signed_$abi.apk" }
+                    }
+                    ?: release.assets.firstOrNull { it.name == "a_untis_release_signed.apk" }
+                    ?: release.assets.firstOrNull { it.name == "app-release-signed.apk" }
 
                 Result.success(UpdateInfo(
                     hasUpdate = hasUpdate,

@@ -1,5 +1,8 @@
 package com.webuntis.dashboard.api
 
+import com.webuntis.dashboard.model.NameScreen
+import com.webuntis.dashboard.model.NameStyle
+import com.webuntis.dashboard.model.NameType
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -343,31 +346,40 @@ class SessionManager @Inject constructor(
         get() = plainPrefs.getInt(KEY_TIMETABLE_DAYS, DEFAULT_TIMETABLE_DAYS)
         set(value) { plainPrefs.edit().putInt(KEY_TIMETABLE_DAYS, value.coerceIn(MIN_TIMETABLE_DAYS, MAX_TIMETABLE_DAYS)).apply() }
 
-    var showLongSubjects: Boolean
-        get() = plainPrefs.getBoolean(KEY_SHOW_LONG_SUBJECTS, false)
-        set(value) { plainPrefs.edit().putBoolean(KEY_SHOW_LONG_SUBJECTS, value).apply() }
+    // ── Klar-/Kurznamen, separately per screen ────────────────────────────────
+    // Defaults reproduce the behaviour from before this was configurable: the day view keeps
+    // the old global switches (so existing users' choices survive the update), homework/
+    // messages/events showed "Langname (Kürzel)", lesson content spelled out the subject, etc.
 
-    var showLongTeachers: Boolean
-        get() = plainPrefs.getBoolean(KEY_SHOW_LONG_TEACHERS, false)
-        set(value) { plainPrefs.edit().putBoolean(KEY_SHOW_LONG_TEACHERS, value).apply() }
+    private fun defaultNameStyle(screen: NameScreen, type: NameType): NameStyle = when (screen) {
+        NameScreen.DAY_VIEW -> when (type) {
+            NameType.SUBJECT -> NameStyle(plainPrefs.getBoolean(KEY_SHOW_LONG_SUBJECTS, false), plainPrefs.getBoolean(KEY_SHOW_SHORT_SUBJECT_PARENS, false))
+            NameType.TEACHER -> NameStyle(plainPrefs.getBoolean(KEY_SHOW_LONG_TEACHERS, false), plainPrefs.getBoolean(KEY_SHOW_SHORT_TEACHER_PARENS, false))
+            NameType.ROOM    -> NameStyle(plainPrefs.getBoolean(KEY_SHOW_LONG_ROOMS, false),    plainPrefs.getBoolean(KEY_SHOW_SHORT_ROOM_PARENS, false))
+        }
+        NameScreen.HOMEWORK, NameScreen.MESSAGES, NameScreen.EVENTS -> NameStyle.LONG_WITH_SHORT
+        NameScreen.LESSON_CONTENT -> if (type == NameType.SUBJECT) NameStyle(long = true) else NameStyle()
+        // Second week-view line used to be "Klarname" only, so keep spelling it out by default.
+        NameScreen.WEEK_VIEW_LINE2 -> NameStyle(long = true)
+        NameScreen.WEEK_VIEW, NameScreen.CLASSBOOK -> NameStyle()
+    }
 
-    var showLongRooms: Boolean
-        get() = plainPrefs.getBoolean(KEY_SHOW_LONG_ROOMS, false)
-        set(value) { plainPrefs.edit().putBoolean(KEY_SHOW_LONG_ROOMS, value).apply() }
+    fun nameStyle(screen: NameScreen, type: NameType): NameStyle {
+        val d = defaultNameStyle(screen, type)
+        val key = "$KEY_NAME_STYLE_PREFIX${screen.name}_${type.name}"
+        return NameStyle(
+            long = plainPrefs.getBoolean("${key}_long", d.long),
+            shortInParens = plainPrefs.getBoolean("${key}_parens", d.shortInParens)
+        )
+    }
 
-    // Only relevant when the matching showLong* above is enabled — appends the abbreviation
-    // in parentheses after the spelled-out name, e.g. "Mathematik (M)".
-    var showShortSubjectInParens: Boolean
-        get() = plainPrefs.getBoolean(KEY_SHOW_SHORT_SUBJECT_PARENS, false)
-        set(value) { plainPrefs.edit().putBoolean(KEY_SHOW_SHORT_SUBJECT_PARENS, value).apply() }
-
-    var showShortTeacherInParens: Boolean
-        get() = plainPrefs.getBoolean(KEY_SHOW_SHORT_TEACHER_PARENS, false)
-        set(value) { plainPrefs.edit().putBoolean(KEY_SHOW_SHORT_TEACHER_PARENS, value).apply() }
-
-    var showShortRoomInParens: Boolean
-        get() = plainPrefs.getBoolean(KEY_SHOW_SHORT_ROOM_PARENS, false)
-        set(value) { plainPrefs.edit().putBoolean(KEY_SHOW_SHORT_ROOM_PARENS, value).apply() }
+    fun setNameStyle(screen: NameScreen, type: NameType, style: NameStyle) {
+        val key = "$KEY_NAME_STYLE_PREFIX${screen.name}_${type.name}"
+        plainPrefs.edit()
+            .putBoolean("${key}_long", style.long)
+            .putBoolean("${key}_parens", style.shortInParens)
+            .apply()
+    }
 
     var useCompactWeekView: Boolean
         get() = plainPrefs.getBoolean(KEY_USE_COMPACT_WEEK_VIEW, false)
@@ -426,15 +438,35 @@ class SessionManager @Inject constructor(
         get() = plainPrefs.getString(KEY_CACHED_TENANT_ID, null)
         set(value) { plainPrefs.edit().putString(KEY_CACHED_TENANT_ID, value).apply() }
 
-    /** What the second (small) line of a week-view tile shows, below the short subject name. */
-    enum class WeekViewSecondLine { SUBJECT_LONG_NAME, TEACHER_LONG_NAME, NONE }
+    /** What a line of a week-view tile shows. How that text is written (short / long /
+     *  long + short) is the per-screen name style: [NameScreen.WEEK_VIEW] for the first line,
+     *  [NameScreen.WEEK_VIEW_LINE2] for the second. */
+    enum class WeekViewLine {
+        SUBJECT, TEACHER, ROOM, NONE;
 
-    var weekViewSecondLine: WeekViewSecondLine
-        get() = when (plainPrefs.getString(KEY_WEEK_VIEW_SECOND_LINE, null)) {
-            WeekViewSecondLine.TEACHER_LONG_NAME.name -> WeekViewSecondLine.TEACHER_LONG_NAME
-            WeekViewSecondLine.NONE.name              -> WeekViewSecondLine.NONE
-            else -> WeekViewSecondLine.SUBJECT_LONG_NAME
+        companion object {
+            /** Also understands the pre-name-style values "SUBJECT_LONG_NAME" / "TEACHER_LONG_NAME". */
+            fun parse(raw: String?): WeekViewLine = when (raw) {
+                "TEACHER", "TEACHER_LONG_NAME" -> TEACHER
+                "ROOM"                         -> ROOM
+                "NONE"                         -> NONE
+                else                           -> SUBJECT
+            }
         }
+    }
+
+    /** First (bold) tile line. Never [WeekViewLine.NONE] — a tile always shows something. */
+    var weekViewFirstLine: WeekViewLine
+        get() = WeekViewLine.parse(plainPrefs.getString(KEY_WEEK_VIEW_FIRST_LINE, null))
+            .takeIf { it != WeekViewLine.NONE } ?: WeekViewLine.SUBJECT
+        set(value) {
+            plainPrefs.edit().putString(KEY_WEEK_VIEW_FIRST_LINE,
+                (if (value == WeekViewLine.NONE) WeekViewLine.SUBJECT else value).name).apply()
+        }
+
+    /** Second (small) tile line, below the first. */
+    var weekViewSecondLine: WeekViewLine
+        get() = WeekViewLine.parse(plainPrefs.getString(KEY_WEEK_VIEW_SECOND_LINE, null))
         set(value) { plainPrefs.edit().putString(KEY_WEEK_VIEW_SECOND_LINE, value.name).apply() }
 
     /** Default number of days (incl. today) shown in the "Unterrichtsinhalte" tab. */
@@ -519,13 +551,19 @@ class SessionManager @Inject constructor(
                 }
             })
             addProperty("timetableDays",      timetableDays)
-            addProperty("showLongSubjects",   showLongSubjects)
-            addProperty("showLongTeachers",   showLongTeachers)
-            addProperty("showLongRooms",      showLongRooms)
-            addProperty("showShortSubjectInParens", showShortSubjectInParens)
-            addProperty("showShortTeacherInParens", showShortTeacherInParens)
-            addProperty("showShortRoomInParens",    showShortRoomInParens)
+            add("nameStyles", com.google.gson.JsonObject().apply {
+                NameScreen.values().forEach { screen ->
+                    screen.types.forEach { type ->
+                        val st = nameStyle(screen, type)
+                        add("${screen.name}_${type.name}", com.google.gson.JsonObject().apply {
+                            addProperty("long", st.long)
+                            addProperty("parens", st.shortInParens)
+                        })
+                    }
+                }
+            })
             addProperty("useCompactWeekView", useCompactWeekView)
+            addProperty("weekViewFirstLine", weekViewFirstLine.name)
             addProperty("weekViewSecondLine", weekViewSecondLine.name)
             addProperty("lessonContentDefaultDays", lessonContentDefaultDays)
             addProperty("lessonContentGroupMode", lessonContentGroupMode.name)
@@ -606,12 +644,33 @@ class SessionManager @Inject constructor(
             }
 
             obj.get("timetableDays")?.asInt?.let      { timetableDays      = it }
-            obj.get("showLongSubjects")?.asBoolean?.let { showLongSubjects  = it }
-            obj.get("showLongTeachers")?.asBoolean?.let { showLongTeachers  = it }
-            obj.get("showLongRooms")?.asBoolean?.let    { showLongRooms     = it }
-            obj.get("showShortSubjectInParens")?.asBoolean?.let { showShortSubjectInParens = it }
-            obj.get("showShortTeacherInParens")?.asBoolean?.let { showShortTeacherInParens = it }
-            obj.get("showShortRoomInParens")?.asBoolean?.let    { showShortRoomInParens    = it }
+            val nameStyles = obj.getAsJsonObject("nameStyles")
+            if (nameStyles != null) {
+                NameScreen.values().forEach { screen ->
+                    screen.types.forEach { type ->
+                        nameStyles.getAsJsonObject("${screen.name}_${type.name}")?.let { o ->
+                            val cur = nameStyle(screen, type)
+                            setNameStyle(screen, type, NameStyle(
+                                long = o.get("long")?.asBoolean ?: cur.long,
+                                shortInParens = o.get("parens")?.asBoolean ?: cur.shortInParens
+                            ))
+                        }
+                    }
+                }
+            } else {
+                // Backup from before names were configurable per screen: the six old global
+                // switches applied to the day view only.
+                fun legacy(screen: NameScreen, type: NameType, longKey: String, parensKey: String) {
+                    val cur = nameStyle(screen, type)
+                    setNameStyle(screen, type, NameStyle(
+                        long = obj.get(longKey)?.asBoolean ?: cur.long,
+                        shortInParens = obj.get(parensKey)?.asBoolean ?: cur.shortInParens
+                    ))
+                }
+                legacy(NameScreen.DAY_VIEW, NameType.SUBJECT, "showLongSubjects", "showShortSubjectInParens")
+                legacy(NameScreen.DAY_VIEW, NameType.TEACHER, "showLongTeachers", "showShortTeacherInParens")
+                legacy(NameScreen.DAY_VIEW, NameType.ROOM,    "showLongRooms",    "showShortRoomInParens")
+            }
             obj.get("useCompactWeekView")?.asBoolean?.let { useCompactWeekView = it }
             obj.get("notificationsEnabled")?.asBoolean?.let { enabled ->
                 notificationsEnabled = enabled
@@ -622,8 +681,11 @@ class SessionManager @Inject constructor(
                     cats.get(c.name)?.asBoolean?.let { setNotificationCategoryEnabled(c, it) }
                 }
             }
+            obj.get("weekViewFirstLine")?.asString?.let { raw ->
+                weekViewFirstLine = WeekViewLine.parse(raw)
+            }
             obj.get("weekViewSecondLine")?.asString?.let { raw ->
-                runCatching { WeekViewSecondLine.valueOf(raw) }.getOrNull()?.let { weekViewSecondLine = it }
+                weekViewSecondLine = WeekViewLine.parse(raw)
             }
             obj.get("lessonContentDefaultDays")?.asInt?.let { lessonContentDefaultDays = it }
             obj.get("lessonContentGroupMode")?.asString?.let { raw ->
@@ -679,6 +741,7 @@ class SessionManager @Inject constructor(
         private const val KEY_ACTIVE_ACCOUNT = "active_account_key"
         private const val KEY_MAIN_ACCOUNT_ALIAS = "main_account_alias"
         private const val KEY_TIMETABLE_DAYS        = "timetable_days"
+        private const val KEY_NAME_STYLE_PREFIX      = "name_style_"
         private const val KEY_SHOW_LONG_SUBJECTS     = "show_long_subjects"
         private const val KEY_SHOW_LONG_TEACHERS     = "show_long_teachers"
         private const val KEY_SHOW_LONG_ROOMS        = "show_long_rooms"
@@ -686,6 +749,7 @@ class SessionManager @Inject constructor(
         private const val KEY_SHOW_SHORT_TEACHER_PARENS = "show_short_teacher_parens"
         private const val KEY_SHOW_SHORT_ROOM_PARENS    = "show_short_room_parens"
         private const val KEY_USE_COMPACT_WEEK_VIEW  = "use_compact_week_view"
+        private const val KEY_WEEK_VIEW_FIRST_LINE   = "week_view_first_line"
         private const val KEY_WEEK_VIEW_SECOND_LINE  = "week_view_second_line"
         private const val KEY_LESSON_CONTENT_DAYS    = "lesson_content_default_days"
         private const val KEY_LESSON_CONTENT_GROUP_MODE = "lesson_content_group_mode"

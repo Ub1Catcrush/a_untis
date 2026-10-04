@@ -30,10 +30,20 @@ class ClassbookViewModel @Inject constructor(
     private val _schoolYearLabel = MutableStateFlow<String?>(null)
     val schoolYearLabel: StateFlow<String?> = _schoolYearLabel
 
+    private val _nameCatalog = MutableStateFlow(com.webuntis.dashboard.model.NameCatalog())
+    /** Short↔long lookup so the subject/teacher can be shown per the per-screen name setting. */
+    val nameCatalog: StateFlow<com.webuntis.dashboard.model.NameCatalog> = _nameCatalog
+
+    val sessionManager: com.webuntis.dashboard.api.SessionManager get() = repository.sessionManager
+
     private var loadJob: Job? = null
 
     init {
         load()
+        viewModelScope.launch {
+            repository.peekNameCatalog()?.let { _nameCatalog.value = it }
+            _nameCatalog.value = repository.getNameCatalog()
+        }
         viewModelScope.launch {
             repository.getCurrentSchoolYearName().onSuccess { _schoolYearLabel.value = it }
         }

@@ -2,9 +2,16 @@ package com.webuntis.dashboard.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.webuntis.dashboard.api.School
+import com.webuntis.dashboard.api.SchoolSearchParams
+import com.webuntis.dashboard.api.SchoolSearchRequest
+import com.webuntis.dashboard.api.SchoolSearchService
 import com.webuntis.dashboard.api.SessionManager
 import com.webuntis.dashboard.api.WebUntisRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -13,8 +20,49 @@ import javax.inject.Inject
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     val sessionManager: SessionManager,
-    val repository: WebUntisRepository
+    val repository: WebUntisRepository,
+    private val schoolSearchService: SchoolSearchService
 ) : ViewModel() {
+
+    // ── School search (login screen) ──────────────────────────────────────────
+    private val _searchState = MutableStateFlow<SchoolSearchState>(SchoolSearchState.Idle)
+    val searchState: StateFlow<SchoolSearchState> = _searchState
+    private var searchJob: Job? = null
+
+    /** Debounced search: only the latest query within 400 ms is actually sent. */
+    fun searchSchools(query: String) {
+        searchJob?.cancel()
+        val q = query.trim()
+        if (q.length < 3) {
+            _searchState.value = SchoolSearchState.Idle
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(400)
+            _searchState.value = SchoolSearchState.Loading
+            _searchState.value = try {
+                val response = schoolSearchService.searchSchool(
+                    SchoolSearchRequest(params = listOf(SchoolSearchParams(q)))
+                )
+                val schools = response.result?.schools.orEmpty()
+                    .filter { !it.loginName.isNullOrBlank() && it.serverHost != null }
+                when {
+                    schools.isNotEmpty()    -> SchoolSearchState.Results(schools)
+                    response.error != null  -> SchoolSearchState.TooManyOrNone
+                    else                    -> SchoolSearchState.Empty
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                SchoolSearchState.Error
+            }
+        }
+    }
+
+    fun clearSchoolSearch() {
+        searchJob?.cancel()
+        _searchState.value = SchoolSearchState.Idle
+    }
 
     private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn
@@ -131,4 +179,14 @@ sealed class SecondAccountState {
     object Removed : SecondAccountState()
     data class Saved(val info: String) : SecondAccountState()
     data class Error(val message: String) : SecondAccountState()
+}
+
+sealed class SchoolSearchState {
+    object Idle : SchoolSearchState()
+    object Loading : SchoolSearchState()
+    data class Results(val schools: List<School>) : SchoolSearchState()
+    object Empty : SchoolSearchState()
+    /** The server answered with an error instead of a list — in practice: too many matches. */
+    object TooManyOrNone : SchoolSearchState()
+    object Error : SchoolSearchState()
 }

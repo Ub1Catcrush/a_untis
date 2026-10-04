@@ -53,6 +53,10 @@ jobs:
       - name: Build apk release APK
         run: bash ./gradlew assembleRelease -PversionName="${{ env.VERSION_NAME }}" --stacktrace
 
+      # Create Bundle AAB Debug
+      - name: Build bundle debug AAB
+        run: bash ./gradlew bundleDebug -PversionName="${{ env.VERSION_NAME }}" --stacktrace
+
       # Create Bundle AAB Release
       # Noted for main module build [main_project_module]:bundleRelease
       - name: Build bundle release AAB
@@ -61,11 +65,16 @@ jobs:
       - name: Decode keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > my-release-key.jks
 
-      - name: Align APK
+      # With ABI splits enabled gradle produces app-<abi>-release-unsigned.apk for every ABI
+      # plus app-universal-release-unsigned.apk. Every one of them is aligned and signed.
+      - name: Align APKs
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 \
-            app/build/outputs/apk/release/app-release-unsigned.apk \
-            app/build/outputs/apk/release/app-release-signed.apk
+          shopt -s nullglob
+          files=(app/build/outputs/apk/release/app-*-release-unsigned.apk)
+          [ ${#files[@]} -gt 0 ] || { echo "No unsigned release APKs found"; exit 1; }
+          for f in "${files[@]}"; do
+            $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 "$f" "${f/-unsigned.apk/-signed.apk}"
+          done
 
       - name: Align AAB
         run: |
@@ -73,18 +82,21 @@ jobs:
             app/build/outputs/bundle/release/app-release.aab \
             app/build/outputs/bundle/release/app-release-signed.aab
 
-      - name: Sign APK with apksigner
+      - name: Sign APKs with apksigner
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-            --ks my-release-key.jks \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --v4-signing-enabled false \
-            app/build/outputs/apk/release/app-release-signed.apk
+          shopt -s nullglob
+          for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
+            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+              --ks my-release-key.jks \
+              --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+              --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+              --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --v4-signing-enabled false \
+              "$f"
+          done
 
       - name: Sign AAB with apksigner
         run: |
@@ -100,11 +112,13 @@ jobs:
             --v4-signing-enabled false \
             app/build/outputs/bundle/release/app-release-signed.aab
 
-      - name: Verify aligned APK signature
+      - name: Verify aligned APK signatures
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify \
-            --verbose --print-certs \
-            app/build/outputs/apk/release/app-release-signed.apk
+          shopt -s nullglob
+          for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
+            echo "== $f"
+            $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs "$f"
+          done
 
       - name: Verify aligned AAB signature
         run: |
@@ -121,17 +135,56 @@ jobs:
           # Ausführung des Verifizierungs-Befehls
           java -jar bundletool.jar validate --bundle=app/build/outputs/bundle/release/app-release-signed.aab
 
+      # Collects everything under its final release name in dist/:
+      #   a_untis_release_signed.apk / .aab        (universal APK = all ABIs)
+      #   a_untis_release_signed_<abi>.apk         (arm64-v8a, armeabi-v7a, x86, x86_64)
+      #   app-release-signed.apk                   (legacy alias of the universal release APK)
+      #   a_untis_debug.apk / .aab                 (universal APK = all ABIs)
+      #   a_untis_debug_<abi>.apk
+      - name: Rename files for release
+        run: |
+          shopt -s nullglob
+          mkdir -p dist
+
+          rename_apks() { # <input dir> <gradle suffix> <final base name>
+            local dir="$1" suffix="$2" base="$3" count=0
+            for f in "$dir"/app-*-"$suffix".apk; do
+              local abi
+              abi=$(basename "$f"); abi=${abi#app-}; abi=${abi%-"$suffix".apk}
+              if [ "$abi" = "universal" ]; then
+                cp "$f" "dist/${base}.apk"
+              else
+                cp "$f" "dist/${base}_${abi}.apk"
+              fi
+              count=$((count + 1))
+            done
+            [ "$count" -gt 0 ] || { echo "No APKs found in $dir for $suffix"; exit 1; }
+          }
+
+          rename_apks app/build/outputs/apk/release release-signed a_untis_release_signed
+          rename_apks app/build/outputs/apk/debug   debug          a_untis_debug
+
+          # Alias with the pre-rename name: already installed app versions look for exactly
+          # "app-release-signed.apk" in the latest release (old UpdateManager), so without
+          # this they would never find the update. Identical to the universal APK.
+          cp dist/a_untis_release_signed.apk dist/app-release-signed.apk
+
+          cp app/build/outputs/bundle/release/app-release-signed.aab dist/a_untis_release_signed.aab
+          cp app/build/outputs/bundle/debug/app-debug.aab            dist/a_untis_debug.aab
+
+          ls -l dist
+
       - name: Upload APKs to Github Artifacts
         uses: actions/upload-artifact@v7
         with:
           name: apk files
-          path: app/build/outputs/apk/**/*.apk
+          path: dist/*.apk
 
       - name: Upload AABs to Github Artifacts
         uses: actions/upload-artifact@v7
         with:
           name: aab files
-          path: app/build/outputs/bundle/**/*.aab
+          path: dist/*.aab
 
       # softprops/action-gh-release replaces the deprecated actions/create-release
       # and actions/upload-release-asset — it creates the release and uploads all
@@ -147,6 +200,5 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release-signed.apk
-            app/build/outputs/bundle/release/app-release-signed.aab
+            dist/*.apk
+            dist/*.aab

@@ -21,6 +21,14 @@
     <string name="login_username_hint">Username</string>
     <string name="login_password_hint">Password</string>
     <string name="login_password_saved_hint">Password saved</string>
+    <string name="login_school_search_hint">Search school (name or town)</string>
+    <string name="login_school_search_helper">From 3 characters – server and short name are filled in automatically</string>
+    <string name="login_school_search_loading">Searching…</string>
+    <string name="login_school_search_empty">No school found – enter server and short name manually below</string>
+    <string name="login_school_search_too_many">No results or too many matches – refine your search</string>
+    <string name="login_school_search_error">Search unavailable – enter server and short name manually below</string>
+    <string name="login_school_search_selected">School selected – just enter username and password</string>
+    <string name="login_manual_entry">School details</string>
     <string name="login_button">Sign in</string>
     <string name="login_data_notice">Your credentials are stored encrypted on this device and never transmitted.</string>
     <string name="hint_sso">Note: If you sign in via school portal, Microsoft or Google login, you need separate direct WebUntis credentials.</string>
@@ -215,19 +223,32 @@
     <string name="settings_second_no_accounts">No additional children added yet.</string>
 
     <!-- Display settings -->
-    <string name="settings_long_names_section">Show full names</string>
+    <string name="settings_week_first_line">First line shows</string>
+    <string name="settings_week_second_line_label">Second line shows</string>
+    <string name="settings_week_view_second_line_subject">Subject</string>
+    <string name="settings_week_view_second_line_teacher">Teacher</string>
+    <string name="settings_week_view_second_line_room">Room</string>
+    <string name="settings_week_view_second_line_none">Nothing</string>
+    <string name="settings_show_short_teacher_in_parens">Show abbreviation in parentheses (e.g. \"Smith (SMI)\")</string>
+    <string name="settings_show_short_room_in_parens">Show abbreviation in parentheses (e.g. \"Physics lab (PH1)\")</string>
+    <string name="settings_show_short_sender_in_parens">Show abbreviation in parentheses (e.g. \"Smith (SMI)\")</string>
+    <string name="settings_names_hint">Configurable per screen – tap to expand.</string>
+    <string name="settings_names_screen_day">Day view</string>
+    <string name="settings_names_screen_week">Week view</string>
+    <string name="settings_names_screen_lesson_content">Lesson content</string>
+    <string name="settings_names_screen_classbook">Classbook</string>
+    <string name="settings_names_screen_homework">Homework</string>
+    <string name="settings_names_screen_messages">Messages</string>
+    <string name="settings_names_screen_events">Events &amp; exams</string>
+    <string name="settings_names_teacher_messages">Spell out sender/recipient names</string>
+    <string name="settings_long_names_section">Full and short names</string>
     <string name="settings_show_long_subjects">Spell out subject name (e.g. "Mathematics")</string>
     <string name="settings_show_long_teachers">Spell out teacher name (e.g. "Smith")</string>
     <string name="settings_show_long_rooms">Spell out room name (e.g. "Classroom 7c")</string>
     <string name="settings_show_short_in_parens">Show abbreviation in parentheses (e.g. "Mathematics (M)")</string>
-    <string name="settings_use_compact_week_view">Compact week view side by side</string>
 
     <string name="label_homework_attachment_download">Download attachment</string>
     <string name="saved_file_path">✓ Saved: %s</string>
-    <string name="settings_week_view_second_line_label">Weekview: 2nd line shows</string>
-    <string name="settings_week_view_second_line_subject">Subject (Fullname)</string>
-    <string name="settings_week_view_second_line_teacher">Teacher (Fullname)</string>
-    <string name="settings_week_view_second_line_none">Nothing</string>
 
     <string name="lesson_content_load_more">Load more days</string>
     <string name="lesson_content_group_by_day">Day</string>

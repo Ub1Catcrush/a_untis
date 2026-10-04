@@ -173,6 +173,9 @@ class MessagesFragment : Fragment() {
             repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.expanded.collect { adapter.notifyDataSetChanged() } }
         }
 
+        adapter.teacherStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.MESSAGES, com.webuntis.dashboard.model.NameType.TEACHER)
+
         // Short↔long name lookup for sender/recipient display ("Langform (Kürzel)")
         viewLifecycleOwner.lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.nameCatalog.collect { adapter.nameCatalog = it } }
@@ -543,6 +546,10 @@ class MessageAdapter(
     var nameCatalog: com.webuntis.dashboard.model.NameCatalog = com.webuntis.dashboard.model.NameCatalog()
         set(value) { field = value; notifyDataSetChanged() }
 
+    /** Sender/recipient name style (Settings → Klar- und Kurznamen → Nachrichten). */
+    var teacherStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle.LONG_WITH_SHORT
+        set(value) { field = value; notifyDataSetChanged() }
+
     /** attachmentId → the currently visible progress views for that row, so download progress
      *  updates can reach the right row directly without a full rebind (avoids flicker and stays
      *  correct even if the row hasn't been rebuilt since the click). Cleared as rows are rebuilt. */
@@ -591,10 +598,10 @@ class MessageAdapter(
             b.textSender.text = when {
                 msg.isSent || msg.isDraft -> {
                     val r = msg.recipientPersons?.mapNotNull { it.displayName }
-                        ?.joinToString(", ") { nameCatalog.teacherDisplay(it) }
-                    if (!r.isNullOrBlank()) "An: $r" else nameCatalog.teacherDisplay(msg.sender?.displayName).ifBlank { "–" }
+                        ?.joinToString(", ") { nameCatalog.teacherDisplay(it, teacherStyle) }
+                    if (!r.isNullOrBlank()) "An: $r" else nameCatalog.teacherDisplay(msg.sender?.displayName, teacherStyle).ifBlank { "–" }
                 }
-                else -> nameCatalog.teacherDisplay(msg.sender?.displayName).ifBlank { "–" }
+                else -> nameCatalog.teacherDisplay(msg.sender?.displayName, teacherStyle).ifBlank { "–" }
             }
             b.textSubject.text = msg.subject ?: ctx.getString(R.string.messages_no_subject)
             b.textPreview.text = msg.content?.takeIf { it.isNotBlank() } ?: msg.contentPreview ?: ""
@@ -731,7 +738,7 @@ class MessageAdapter(
 
             val header = TextView(ctx).apply {
                 text = buildString {
-                    append(nameCatalog.teacherDisplay(reply.sender?.displayName).ifBlank { "–" })
+                    append(nameCatalog.teacherDisplay(reply.sender?.displayName, teacherStyle).ifBlank { "–" })
                     reply.sentDateFormatted?.let { append("  ·  $it") }
                 }
                 setTypeface(null, android.graphics.Typeface.BOLD)

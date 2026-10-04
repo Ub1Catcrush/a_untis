@@ -36,6 +36,10 @@ class LessonContentFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val adapter = LessonContentAdapter()
+        adapter.subjectStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.SUBJECT)
+        adapter.teacherStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.TEACHER)
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
         binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true, userInitiated = true) }
@@ -126,6 +130,10 @@ class LessonContentAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val rows = mutableListOf<ContentRow>()
 
+    /** Per-screen name settings (Settings → Klar- und Kurznamen); read when the list is bound. */
+    var subjectStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle(long = true)
+    var teacherStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle()
+
     fun submitGroups(groups: List<ContentGroup>, groupMode: SessionManager.LessonContentGroupMode) {
         rows.clear()
         groups.forEach { group ->
@@ -154,7 +162,7 @@ class LessonContentAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
             is ContentRow.Header -> (holder as HeaderVH).bind(row)
-            is ContentRow.Entry  -> (holder as EntryVH).bind(row.entry, row.groupMode)
+            is ContentRow.Entry  -> (holder as EntryVH).bind(row.entry, row.groupMode, subjectStyle, teacherStyle)
         }
     }
 
@@ -168,16 +176,21 @@ class LessonContentAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     }
 
     class EntryVH(private val b: ItemLessonContentEntryBinding) : RecyclerView.ViewHolder(b.root) {
-        fun bind(entry: Lesson, groupMode: SessionManager.LessonContentGroupMode) {
+        fun bind(
+            entry: Lesson,
+            groupMode: SessionManager.LessonContentGroupMode,
+            subjectStyle: com.webuntis.dashboard.model.NameStyle,
+            teacherStyle: com.webuntis.dashboard.model.NameStyle
+        ) {
             // Whichever of "date" / "subject" is ALREADY the section header is redundant here —
             // show the other one as the per-entry leading label instead.
             b.textLeadingLabel.text = if (groupMode == SessionManager.LessonContentGroupMode.BY_DAY) {
-                entry.subjectLongName.takeIf { it != "–" } ?: entry.subjectName
+                entry.displaySubject(subjectStyle.long, subjectStyle.shortInParens)
             } else {
                 entry.dateFormatted
             }
             b.textContent.text = entry.teachingContent ?: ""
-            val teacher = entry.teacherNames
+            val teacher = entry.displayTeachers(teacherStyle.long, teacherStyle.shortInParens)
             b.textTeacher.text = teacher
             b.textTeacher.isVisible = teacher.isNotBlank()
             b.colorStripe.setBackgroundColor(

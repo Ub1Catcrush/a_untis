@@ -36,6 +36,17 @@ android {
         }
     }
 
+    // One APK per CPU architecture plus one universal APK containing all of them.
+    // Only affects APK builds; AABs always contain every ABI (Play splits them on delivery).
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true

@@ -1,4 +1,4 @@
-# Project Context: A*Untis
+# Project Context: WebUntis Dashboard
 
 ## Overview
 Native Android application (Kotlin) for student/parent WebUntis dashboards.
@@ -34,8 +34,8 @@ Native Android application (Kotlin) for student/parent WebUntis dashboards.
 - `NetworkModule`: Configures OkHttpClient with a custom `CookieJar` and `jsonSanitizer` to handle WebUntis session expiry (HTML-to-JSON conversion).
 
 ## Current Status
-- **Version:** v0.5.5 (defined in `dependencies.gradle`).
-- **Target SDK:** 36 (Android 16).
+- **Version:** v0.0.12 (defined in `dependencies.gradle`).
+- **Target SDK:** 35 (Android 15).
 
 ## Notifications (PlanChangeCheckWorker / NotificationHelper)
 - Six independent categories (`NotificationCategory`): cancellations, substitutions (incl. subject change), room changes, messages, homework, classbook. Each is its OWN Android notification channel (timetable ones grouped) AND has its own switch in Settings (`SessionManager.isNotificationCategoryEnabled`, default on, part of settings export/import). Master switch `notificationsEnabled` still gates the whole worker.
@@ -45,3 +45,13 @@ Native Android application (Kotlin) for student/parent WebUntis dashboards.
 
 ## Absences screen
 - "Nachrichten" view: every absence is shown individually (`toSingleClusters`). Merging consecutive days/ranges happens ONLY in the "Liste" view (`groupIntoAbsenceEntries`).
+
+## Login: school search
+- Login screen has a search field (name/town) backed by WebUntis' public `POST https://mobile.webuntis.com/ms/schoolquery2` (JSON-RPC `searchSchool`, see `SchoolSearchService`). Selecting a hit fills server (`School.serverHost`) and school short name (`loginName`); manual fields stay editable as fallback. Debounced (400 ms, min 3 chars) in `LoginViewModel.searchSchools`.
+
+## Klar-/Kurznamen (per screen)
+- `NameScreen` × `NameType` → `NameStyle(long, shortInParens)`, stored by `SessionManager.nameStyle/setNameStyle` (prefs `name_style_<SCREEN>_<TYPE>_long|_parens`, part of settings export/import; legacy global backup keys map to DAY_VIEW).
+- Screens: day view (subject/teacher/room), week view (subject on 1st tile line), lesson content, classbook, homework, messages (sender/recipient), events. Absences show no subject/teacher/room names, so there is no setting for them. Add a screen by extending `NameScreen` (the settings UI is generated from it) and applying the style where the names are rendered.
+- Defaults reproduce the pre-setting behaviour (day view keeps the old global switches; homework/messages/events = "Langname (Kürzel)"; lesson content subject long). `NameCatalog.subjectDisplay/teacherDisplay(raw, style)` handle screens that only get short codes.
+- Week view: each tile line has a content choice + name style. First line: `SessionManager.weekViewFirstLine` (SUBJECT/TEACHER/ROOM, default SUBJECT) styled via `NameScreen.WEEK_VIEW` + type. Second line: `weekViewSecondLine` (SUBJECT/TEACHER/ROOM/NONE; legacy *_LONG_NAME values still parsed) styled via `NameScreen.WEEK_VIEW_LINE2` + type. Enum is `SessionManager.WeekViewLine`. Both are configured inside the week-view block of the name settings; tile colour still comes from the lesson's subject.
+- `useCompactWeekView` is only the Tag/Woche toggle state of the timetable toolbar; there is intentionally no settings switch for it (and no CompactWeekAdapter any more).

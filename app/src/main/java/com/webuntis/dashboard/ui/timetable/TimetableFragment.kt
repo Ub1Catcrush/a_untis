@@ -137,7 +137,10 @@ class TimetableFragment : Fragment() {
             if (isWeek) {
                 binding.weekGridView.submit(
                     days,
-                    secondLineMode = viewModel.weekViewSecondLine
+                    firstLineMode = viewModel.weekViewFirstLine,
+                    firstLineStyle = viewModel.weekFirstLineStyle,
+                    secondLineMode = viewModel.weekViewSecondLine,
+                    secondLineStyle = viewModel.weekSecondLineStyle
                 )
             } else {
                 setupViewPager(days)

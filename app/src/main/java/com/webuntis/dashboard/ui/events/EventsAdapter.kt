@@ -12,18 +12,21 @@ import com.webuntis.dashboard.model.SchoolEvent
 
 class EventsAdapter : ListAdapter<SchoolEvent, EventsAdapter.VH>(Diff) {
 
+    /** Subject name style (Settings → Klar- und Kurznamen → Termine). */
+    var subjectStyle: com.webuntis.dashboard.model.NameStyle = com.webuntis.dashboard.model.NameStyle.LONG_WITH_SHORT
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
         VH(ItemEventBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
     override fun onBindViewHolder(holder: VH, position: Int) =
-        holder.bind(getItem(position))
+        holder.bind(getItem(position), subjectStyle)
 
     class VH(private val b: ItemEventBinding) : RecyclerView.ViewHolder(b.root) {
-        fun bind(event: SchoolEvent) {
+        fun bind(event: SchoolEvent, subjectStyle: com.webuntis.dashboard.model.NameStyle) {
             b.textTitle.text = event.displayTitle
             b.textDate.text = event.dateLabel
             b.textTime.text = event.timeLabel.ifBlank { "" }
-            val subjectText = event.subjectDisplay
+            val subjectText = event.subjectDisplay(subjectStyle)
             // Avoid redundant duplication when the title already IS the subject (e.g. no
             // separate lessonInfo was set, so displayTitle already fell back to the subject).
             if (subjectText.isNotBlank() && !event.title.isNullOrBlank()) {

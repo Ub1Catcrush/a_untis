@@ -103,6 +103,8 @@ class LessonContentViewModel @Inject constructor(
     /** Widens the visible window by [LOAD_MORE_INCREMENT] more days and re-fetches — only the
      *  newly-uncovered (older) slice actually hits the network, see
      *  WebUntisRepository.getTeachingContentEntries(). */
+    val sessionManager: SessionManager get() = repository.sessionManager
+
     fun loadMoreDays() {
         if (_windowDays.value >= MAX_WINDOW_DAYS) return
         viewModelScope.launch {
@@ -144,9 +146,11 @@ class LessonContentViewModel @Inject constructor(
     }
 
     private fun group(lessons: List<Lesson>, mode: SessionManager.LessonContentGroupMode): List<ContentGroup> {
+        val subjectStyle = repository.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.SUBJECT)
         return if (mode == SessionManager.LessonContentGroupMode.BY_SUBJECT) {
             lessons
-                .groupBy { lesson -> lesson.subjectLongName.takeIf { it != "–" } ?: lesson.subjectName }
+                .groupBy { lesson -> lesson.displaySubject(subjectStyle.long, subjectStyle.shortInParens) }
                 .toSortedMap(compareBy { it.lowercase() })
                 .map { (subject, entries) -> ContentGroup(subject, entries.sortedByDescending { it.date }) }
         } else {

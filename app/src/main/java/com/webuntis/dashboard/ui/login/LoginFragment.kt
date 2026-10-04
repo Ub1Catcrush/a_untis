@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import androidx.core.view.isVisible
+import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -48,6 +49,8 @@ class LoginFragment : Fragment() {
 
         binding.root.requestFocus()
 
+        setupSchoolSearch()
+
         binding.btnLogin.setOnClickListener {
             hideKeyboard()
             attemptLogin()
@@ -77,6 +80,52 @@ class LoginFragment : Fragment() {
                             binding.btnLogin.isEnabled = true
                             binding.errorText.isVisible = false
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupSchoolSearch() {
+        val adapter = SchoolSuggestionAdapter(requireContext())
+        binding.inputSchoolSearch.setAdapter(adapter)
+
+        binding.inputSchoolSearch.doOnTextChanged { text, _, _, _ ->
+            val query = text?.toString().orEmpty()
+            // Picking a suggestion replaces the text with its label — that must not start a new search.
+            if (adapter.hasLabel(query)) return@doOnTextChanged
+            viewModel.searchSchools(query)
+        }
+
+        binding.inputSchoolSearch.setOnItemClickListener { _, _, position, _ ->
+            val school = adapter.getItem(position) ?: return@setOnItemClickListener
+            binding.inputServer.setText(school.serverHost.orEmpty())
+            binding.inputSchoolname.setText(school.loginName.orEmpty())
+            viewModel.clearSchoolSearch()
+            binding.schoolSearchStatus.text = getString(R.string.login_school_search_selected)
+            binding.inputUsername.requestFocus()
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.searchState.collect { state ->
+                    when (state) {
+                        is SchoolSearchState.Idle -> {
+                            // Keep the "selected" confirmation until the user types again.
+                        }
+                        is SchoolSearchState.Loading ->
+                            binding.schoolSearchStatus.setText(R.string.login_school_search_loading)
+                        is SchoolSearchState.Results -> {
+                            binding.schoolSearchStatus.setText(R.string.login_school_search_helper)
+                            adapter.submit(state.schools)
+                            if (binding.inputSchoolSearch.hasFocus()) binding.inputSchoolSearch.showDropDown()
+                        }
+                        is SchoolSearchState.Empty ->
+                            binding.schoolSearchStatus.setText(R.string.login_school_search_empty)
+                        is SchoolSearchState.TooManyOrNone ->
+                            binding.schoolSearchStatus.setText(R.string.login_school_search_too_many)
+                        is SchoolSearchState.Error ->
+                            binding.schoolSearchStatus.setText(R.string.login_school_search_error)
                     }
                 }
             }

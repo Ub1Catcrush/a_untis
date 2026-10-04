@@ -35,6 +35,8 @@ class EventsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         val adapter = EventsAdapter()
+        adapter.subjectStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.EVENTS, com.webuntis.dashboard.model.NameType.SUBJECT)
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 

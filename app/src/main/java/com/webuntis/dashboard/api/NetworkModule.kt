@@ -240,4 +240,20 @@ object NetworkModule {
             .build()
             .create(GithubService::class.java)
     }
+
+    @Provides
+    @Singleton
+    fun provideSchoolSearchService(): SchoolSearchService {
+        // Plain client on purpose: no school session cookies/headers must leak to mobile.webuntis.com.
+        val client = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl("https://mobile.webuntis.com/")
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(SchoolSearchService::class.java)
+    }
 }
