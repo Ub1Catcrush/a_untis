@@ -1,0 +1,20 @@
+A*Untis ist eine alternative Android-App für <b>WebUntis</b> für Schüler und Eltern. Sie zeigt deine Schuldaten im übersichtlichen Material-3-Design mit hellem und dunklem Modus.
+
+<b>Funktionen</b>
+<ul>
+<li>Stundenplan: eigener Plan, Klassenplan oder kombinierter Plan; Tagesansicht oder kompakte Wochenansicht; Ausfälle, Vertretungen und Raumänderungen auf einen Blick; Uhrzeit-Linie</li>
+<li>Unterrichtsinhalte, gruppiert nach Tag oder Fach</li>
+<li>Hausaufgaben mit Fälligkeitsfarben, Abhaken und Anhang-Download</li>
+<li>Nachrichten: Posteingang, Gesendet und Entwürfe; verfassen, antworten, löschen, als ungelesen markieren; Anhänge</li>
+<li>Abwesenheiten: ansehen, filtern, melden, bearbeiten und löschen</li>
+<li>Termine, Prüfungen und Klassenbuch-Einträge</li>
+<li>Mehrere Kinder / Accounts mit schnellem Umschalter und gemeinsamem Posteingang</li>
+<li>Optionale Hintergrund-Benachrichtigungen bei Stundenplanänderungen, neuen Nachrichten, Hausaufgaben und Klassenbucheinträgen</li>
+<li>Export und Import der Einstellungen, Deutsch und Englisch</li>
+</ul>
+
+<b>Datenschutz</b>
+Deine Zugangsdaten werden verschlüsselt auf deinem Gerät gespeichert und nur an den WebUntis-Server deiner Schule gesendet. Die App enthält keine Werbung, kein Tracking und keine Google-Dienste.
+
+<b>Hinweis</b>
+Du benötigst direkte WebUntis-Zugangsdaten (Server, Schul-Kurzname, Benutzername und Passwort). Nutzt deine Schule eine Anmeldung über Microsoft, Google oder ein Schulportal, müssen diese separat auf der WebUntis-Webseite eingerichtet werden. Dies ist eine inoffizielle App und steht in keiner Verbindung zur Untis GmbH.

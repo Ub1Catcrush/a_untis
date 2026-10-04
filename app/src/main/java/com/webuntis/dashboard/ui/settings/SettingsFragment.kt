@@ -118,7 +118,12 @@ class SettingsFragment : Fragment() {
 
         // ── Update Section ────────────────────────────────────────────────────
         binding.textVersionInfo.text = getString(R.string.settings_update_version_info, BuildConfig.VERSION_NAME)
-        binding.btnCheckUpdate.setOnClickListener { checkForUpdates() }
+        if (BuildConfig.SELF_UPDATE) {
+            binding.btnCheckUpdate.setOnClickListener { checkForUpdates() }
+        } else {
+            // F-Droid build: updates come from F-Droid, so hide the GitHub updater button.
+            binding.btnCheckUpdate.visibility = View.GONE
+        }
 
         // ── Timetable days slider ─────────────────────────────────────────────
         val current = loginViewModel.sessionManager.timetableDays

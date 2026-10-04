@@ -1,0 +1,206 @@
+name: Publish F-Droid repository
+
+# Publishes the already signed release APKs (built by the "Build, Sign and Upload APK in
+# Releases" workflow) as a self-hosted F-Droid repository on GitHub Pages:
+#
+#   https://<owner>.github.io/<repo>/fdroid/repo
+#
+# Triggered automatically whenever a GitHub release is published, or manually for any tag.
+# One-time setup (secrets, GitHub Pages, adding the repo to F-Droid) is described in docs/FDROID.md.
+#
+# Note: the official F-Droid store (f-droid.org) does NOT use this workflow - it builds the app
+# from source from a recipe in its own fdroiddata repository (fdroid/metadata/*.yml here).
+
+on:
+  #release:
+  #  types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v0.5.7 (empty = latest releases only, no new wait)"
+        required: false
+        type: string
+
+permissions:
+  contents: write   # push the generated repository to the gh-pages branch
+
+# Never run two publishes at once (both would push to gh-pages).
+concurrency:
+  group: fdroid-repo
+  cancel-in-progress: false
+
+env:
+  APP_ID: com.webuntis.dashboard
+  APK_ASSET: a_untis_release_signed.apk   # universal release APK, see release.yml "Rename files"
+  KEEP_VERSIONS: 5                        # how many releases stay installable/downgradable in the repo
+
+jobs:
+  fdroid:
+    name: Build and publish F-Droid repo
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check required secrets
+        env:
+          FDROID_KEYSTORE: ${{ secrets.FDROID_KEYSTORE }}
+          FDROID_KEYSTORE_PASSWORD: ${{ secrets.FDROID_KEYSTORE_PASSWORD }}
+          FDROID_KEY_PASSWORD: ${{ secrets.FDROID_KEY_PASSWORD }}
+          FDROID_KEY_ALIAS: ${{ secrets.FDROID_KEY_ALIAS }}
+        run: |
+          missing=0
+          for v in FDROID_KEYSTORE FDROID_KEYSTORE_PASSWORD FDROID_KEY_PASSWORD FDROID_KEY_ALIAS; do
+            if [ -z "${!v}" ]; then echo "::error::Secret $v is not set (see docs/FDROID.md)"; missing=1; fi
+          done
+          exit $missing
+
+      # Official recommendation for Ubuntu: the F-Droid PPA (the distro package is often outdated).
+      # https://fdroid.gitlab.io/jekyll-fdroid/docs/Installing_the_Server_and_Repo_Tools/
+      - name: Install fdroidserver
+        run: |
+          sudo add-apt-repository -y ppa:fdroid/fdroidserver
+          sudo apt-get update
+          sudo apt-get install -y fdroidserver
+          fdroid --version
+
+      # The release workflow creates the release first and uploads the assets afterwards, so the
+      # "published" event can arrive before the APK exists. Wait for it (max. 15 minutes).
+      - name: Wait for release asset
+        if: github.event_name == 'release' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+                 | grep -qx "$APK_ASSET"; then
+              echo "Asset $APK_ASSET found on $TAG"; exit 0
+            fi
+            echo "Waiting for $APK_ASSET on $TAG ($i/30)..."; sleep 30
+          done
+          echo "::error::$APK_ASSET never appeared on release $TAG"; exit 1
+
+      # Download the universal APK of the newest KEEP_VERSIONS releases and name each one by its
+      # versionCode (major*1000000 + minor*10000 + patch, same formula as app/build.gradle.kts).
+      - name: Download release APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p fdroid/repo
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 30 \
+              --json tagName,isDraft,isPrerelease \
+              --jq '.[] | select((.isDraft|not) and (.isPrerelease|not)) | .tagName' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n "$KEEP_VERSIONS" > tags.txt
+          [ -s tags.txt ] || { echo "::error::No matching releases (vX.Y.Z) found"; exit 1; }
+
+          while read -r tag; do
+            IFS=. read -r major minor patch <<< "${tag#v}"
+            code=$(( major * 1000000 + minor * 10000 + patch ))
+            tmp=$(mktemp -d)
+            if gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$APK_ASSET" --dir "$tmp"; then
+              mv "$tmp/$APK_ASSET" "fdroid/repo/${APP_ID}_${code}.apk"
+              echo "Added $tag (versionCode $code)"
+
+              # Changelog shown in F-Droid = the GitHub release notes, flattened to plain text
+              # (links -> link text, markdown headings/bold/bullets removed, max. 500 bytes).
+              mkdir -p fdroid/changelogs
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+                | tr -d '\r' \
+                | sed -E 's/\[([^]]*)\]\([^)]*\)/\1/g; s/^#+ *//; s/\*\*//g; s/^[*-] +/• /' \
+                | cat -s | head -c 500 | iconv -f UTF-8 -t UTF-8 -c > "fdroid/changelogs/${code}.txt"
+              [ -s "fdroid/changelogs/${code}.txt" ] || echo "Version ${tag#v}" > "fdroid/changelogs/${code}.txt"
+            else
+              echo "::warning::$tag has no $APK_ASSET, skipped"
+            fi
+          done < tags.txt
+          ls -l fdroid/repo
+
+      # F-Droid's metadata folder wants <appid>/<locale>/{title,short_description,...}.txt plus
+      # icon/screenshots next to them, while fastlane keeps those under images/ - flatten it.
+      - name: Prepare app metadata from fastlane
+        run: |
+          src=fastlane/metadata/android
+          dst=fdroid/metadata/$APP_ID
+          rm -rf "$dst"; mkdir -p "$dst"
+          for loc in "$src"/*/; do
+            name=$(basename "$loc")
+            mkdir -p "$dst/$name"
+            cp -r "$loc"* "$dst/$name/"
+            if [ -d "$dst/$name/images" ]; then
+              cp -r "$dst/$name/images/." "$dst/$name/"
+              rm -rf "$dst/$name/images"
+            fi
+          done
+          # Per-version changelogs come from the GitHub release notes (see download step), not from
+          # fastlane. They are release notes in one language, so they go to the default locale.
+          mkdir -p "$dst/en-US/changelogs"
+          cp fdroid/changelogs/*.txt "$dst/en-US/changelogs/" 2>/dev/null || true
+          find "$dst" -type f | sort
+
+      - name: Write fdroid config and restore repo signing key
+        working-directory: fdroid
+        env:
+          FDROID_KEYSTORE: ${{ secrets.FDROID_KEYSTORE }}
+          FDROID_KEYSTORE_PASSWORD: ${{ secrets.FDROID_KEYSTORE_PASSWORD }}
+          FDROID_KEY_PASSWORD: ${{ secrets.FDROID_KEY_PASSWORD }}
+          FDROID_KEY_ALIAS: ${{ secrets.FDROID_KEY_ALIAS }}
+        run: |
+          echo "$FDROID_KEYSTORE" | base64 -d > keystore.jks
+          python3 - <<'PY'
+          import json, os
+          owner = os.environ["GITHUB_REPOSITORY_OWNER"].lower()
+          repo = os.environ["GITHUB_REPOSITORY"].split("/", 1)[1]
+          cfg = {
+              "sdk_path": os.environ.get("ANDROID_HOME", ""),
+              "repo_url": f"https://{owner}.github.io/{repo}/fdroid/repo",
+              "repo_name": "A*Untis F-Droid repository",
+              "repo_description": "Unofficial WebUntis client A*Untis - signed release builds from GitHub.",
+              "archive_older": 0,
+              "keystore": "keystore.jks",
+              "repo_keyalias": os.environ["FDROID_KEY_ALIAS"],
+              "keystorepass": os.environ["FDROID_KEYSTORE_PASSWORD"],
+              "keypass": os.environ["FDROID_KEY_PASSWORD"],
+              "keydname": "CN=A*Untis F-Droid repo, O=A*Untis",
+          }
+          # JSON is valid YAML and takes care of quoting special characters in the passwords.
+          with open("config.yml", "w") as f:
+              json.dump(cfg, f, indent=2)
+          PY
+          chmod 0600 config.yml keystore.jks
+
+      - name: Generate repository index
+        working-directory: fdroid
+        run: |
+          fdroid update --verbose
+          ls -l repo | head -30
+
+      - name: Add landing page
+        working-directory: fdroid
+        run: |
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          repo=${GITHUB_REPOSITORY#*/}
+          url="https://${owner}.github.io/${repo}/fdroid/repo"
+          cat > repo/index.html <<HTML
+          <!doctype html>
+          <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>A*Untis F-Droid repository</title>
+          <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}code{word-break:break-all}</style>
+          </head><body>
+          <h1>A*Untis F-Droid repository</h1>
+          <p>Add this URL as a repository in the F-Droid app (Settings &rarr; Repositories &rarr; +):</p>
+          <p><code>${url}</code></p>
+          <p><a href="fdroidrepos://${url#https://}">Open in F-Droid</a></p>
+          <p>Source code: <a href="https://github.com/${GITHUB_REPOSITORY}">github.com/${GITHUB_REPOSITORY}</a></p>
+          </body></html>
+          HTML
+
+      # Deliberately publishes only fdroid/repo (never config.yml / keystore.jks).
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ github.token }}
+          publish_dir: ./fdroid/repo
+          destination_dir: fdroid/repo
+          keep_files: false
+          commit_message: "F-Droid repo update (${{ github.event.release.tag_name || inputs.tag || github.sha }})"

@@ -1,0 +1,20 @@
+A*Untis is an alternative Android app for <b>WebUntis</b> students and parents. It shows your school data in a clean Material 3 design with light and dark mode.
+
+<b>Features</b>
+<ul>
+<li>Timetable: personal, class or combined plan; day view or compact week view; cancellations, substitutions and room changes at a glance; current-time line</li>
+<li>Lesson content grouped by day or subject</li>
+<li>Homework with due-date colours, check-off and attachment download</li>
+<li>Messages: inbox, sent and drafts; compose, reply, delete, mark as unread; attachments</li>
+<li>Absences: view, filter, report, edit and delete</li>
+<li>Events, exams and class register entries</li>
+<li>Several children / accounts with a quick switcher and a shared inbox</li>
+<li>Optional background notifications for schedule changes, new messages, homework and class register entries</li>
+<li>Settings export and import, German and English</li>
+</ul>
+
+<b>Privacy</b>
+Your credentials are stored encrypted on your device and are only sent to your own school's WebUntis server. The app contains no ads, no tracking and no Google services.
+
+<b>Note</b>
+You need direct WebUntis credentials (server, school short name, username and password). If your school signs in via Microsoft, Google or a school portal, these have to be set up separately on the WebUntis website. This is an unofficial app and not affiliated with Untis GmbH.

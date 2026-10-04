@@ -1,0 +1,52 @@
+# F-Droid app definition for A*Untis.
+#
+# Used in two ways:
+#  1. Official F-Droid inclusion: copy this file to metadata/com.webuntis.dashboard.yml in a fork of
+#     https://gitlab.com/fdroid/fdroiddata and open a merge request (see docs/FDROID.md).
+#     F-Droid then builds the app from source at the tag below.
+#  2. Own F-Droid repository: .github/workflows/fdroid.yml uses this file as-is (the Builds section
+#     is ignored there; the already-signed release APKs are published instead).
+#
+# Store texts (title, descriptions, screenshots, changelogs) come from
+# fastlane/metadata/android/<locale>/ in this repository, so they are not repeated here.
+
+Categories:
+  - Science & Education
+License: GPL-3.0-only
+AuthorName: Ub1Catcrush
+WebSite: https://github.com/Ub1Catcrush/a_untis
+SourceCode: https://github.com/Ub1Catcrush/a_untis
+IssueTracker: https://github.com/Ub1Catcrush/a_untis/issues
+Changelog: https://github.com/Ub1Catcrush/a_untis/releases
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: Only works with a WebUntis school account, a proprietary online service.
+    de-DE: Funktioniert nur mit einem WebUntis-Schulkonto, einem proprietären Online-Dienst.
+
+AutoName: A*Untis
+
+RepoType: git
+Repo: https://github.com/Ub1Catcrush/a_untis.git
+
+Builds:
+  - versionName: 0.5.7
+    versionCode: 50007
+    commit: v0.5.7
+    subdir: app
+    gradle:
+      - yes
+    prebuild:
+      # Turn off the in-app GitHub updater (F-Droid delivers updates) and ABI splits ...
+      - printf '\nfdroid=true\n' >> ../gradle.properties
+      # ... and drop the permission that only the self-updater needs.
+      - sed -i '/REQUEST_INSTALL_PACKAGES/d' src/main/AndroidManifest.xml
+
+# versionCode = major*1000000 + minor*10000 + patch (see dependencies.gradle / app/build.gradle.kts),
+# which F-Droid cannot derive automatically from a tag. Add a new "Builds" entry per release
+# (or ask for a plain versionCode in dependencies.gradle to enable AutoUpdateMode: Version).
+UpdateCheckMode: Tags
+AutoUpdateMode: None
+
+CurrentVersion: 0.5.7
+CurrentVersionCode: 50007

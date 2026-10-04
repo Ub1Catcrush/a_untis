@@ -145,6 +145,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkUpdatesSilently() {
+        // F-Droid builds are updated by F-Droid itself — no in-app updater there.
+        if (!BuildConfig.SELF_UPDATE) return
         lifecycleScope.launch {
             updateManager.checkForUpdates().onSuccess { info ->
                 if (info.hasUpdate && info.downloadUrl != null) {

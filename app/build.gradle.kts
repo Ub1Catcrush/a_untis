@@ -13,6 +13,9 @@ plugins {
     alias(libs.plugins.navigation.safeargs)
 }
 
+// True when built by F-Droid (or locally with -Pfdroid=true).
+val isFdroidBuild = project.hasProperty("fdroid")
+
 android {
     namespace = "com.webuntis.dashboard"
     compileSdk = 36
@@ -28,6 +31,11 @@ android {
 
         versionCode = major * 1000000 + minor * 10000 + patch
 
+        // F-Droid builds the app itself and must not ship a self-updater (F-Droid delivers
+        // updates). The F-Droid recipe (fdroid/metadata/com.webuntis.dashboard.yml) appends
+        // "fdroid=true" to gradle.properties, which turns the in-app GitHub updater off.
+        buildConfigField("boolean", "SELF_UPDATE", (!isFdroidBuild).toString())
+
         // 4. Kotlin-konforme Überprüfung für optionale Properties und korrekte Strings
         versionName = if (project.hasProperty("versionName")) {
             project.property("versionName") as String
@@ -37,13 +45,15 @@ android {
     }
 
     // One APK per CPU architecture plus one universal APK containing all of them.
-    // Must stay OFF while a bundle (AAB) is built: an AAB always contains every ABI anyway
-    // (Play splits it on delivery), and with APK ABI splits enabled the bundle tasks fail with
-    // "Sequence contains more than one matching element" (PerModuleBundleTask.getResourcesFile).
-    val buildsBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
+    // ABI splits must be OFF when building an AAB: with splits enabled AGP produces several
+    // resource files per variant and :app:buildReleasePreBundle fails with
+    // "Sequence contains more than one matching element". AABs always contain every ABI anyway
+    // (Play splits them on delivery), so splits are only enabled for non-bundle builds.
+    // F-Droid gets a single universal APK (one versionCode), so splits are off there too.
+    val isBundleBuild = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
     splits {
         abi {
-            isEnable = !buildsBundle
+            isEnable = !isBundleBuild && !isFdroidBuild
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true
@@ -68,6 +78,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+    // F-Droid requires reproducible, blob-free output: no encrypted dependency metadata block.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
     buildFeatures {
         viewBinding = true
