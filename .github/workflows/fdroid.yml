@@ -12,8 +12,8 @@ name: Publish F-Droid repository
 # from source from a recipe in its own fdroiddata repository (fdroid/metadata/*.yml here).
 
 on:
-  #release:
-  #  types: [published]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:

@@ -7,6 +7,7 @@ import com.google.gson.Strictness
 import com.google.gson.ToNumberPolicy
 import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
+import com.webuntis.dashboard.model.CombinedOverlayRule
 import com.webuntis.dashboard.model.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -368,10 +369,10 @@ class WebUntisRepository @Inject constructor(
         cacheTimetableByAccount.clear()
     }
 
-    /** Updates which class-plan subjects are allowed to fill gaps in COMBINED mode and refreshes. */
-    fun setCombinedOverlaySubjects(subjects: Set<String>) {
-        if (sessionManager.combinedOverlaySubjects == subjects) return
-        sessionManager.combinedOverlaySubjects = subjects
+    /** Updates the rule deciding which class-plan subjects fill gaps in COMBINED mode and refreshes. */
+    fun setCombinedOverlayRule(rule: CombinedOverlayRule) {
+        if (sessionManager.combinedOverlayRule == rule) return
+        sessionManager.combinedOverlayRule = rule
         cacheTimetableByAccount.clear()
     }
 
@@ -876,8 +877,7 @@ class WebUntisRepository @Inject constructor(
                         ?: return@coroutineScope Result.failure(personalResult.exceptionOrNull() ?: Exception("Unbekannter Fehler"))
                     // The class-plan overlay is best-effort: if it fails, still show the personal plan.
                     val classLessons = classDeferred.await().getOrDefault(emptyList())
-                    val allowed = sessionManager.combinedOverlaySubjects
-                    Result.success(buildCombinedLessons(personal, classLessons, allowed))
+                    Result.success(buildCombinedLessons(personal, classLessons, sessionManager.combinedOverlayRule))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -978,16 +978,16 @@ class WebUntisRepository @Inject constructor(
     /**
      * Adds class-plan lessons into the personal list, but ONLY for slots that are actually empty
      * in the personal plan (same date, no time overlap with any personal lesson) and only for
-     * subjects the user has opted into via [SessionManager.combinedOverlaySubjects]. Added entries
-     * are marked [Lesson.isFromClassPlan] so the UI can label/style them distinctly.
+     * subjects [rule] allows. Added entries are marked [Lesson.isFromClassPlan] so the UI can
+     * label/style them distinctly.
      */
     private fun buildCombinedLessons(
-        personal: List<Lesson>, classLessons: List<Lesson>, allowedSubjects: Set<String>
+        personal: List<Lesson>, classLessons: List<Lesson>, rule: CombinedOverlayRule
     ): List<Lesson> {
-        if (allowedSubjects.isEmpty()) return personal
+        if (!rule.showRest && rule.included.isEmpty()) return personal
         val personalByDate = personal.groupBy { it.date }
         val overlay = classLessons.filter { cl ->
-            if (cl.subjectName !in allowedSubjects && cl.subjectLongName !in allowedSubjects) return@filter false
+            if (!rule.allows(cl.subjectName, cl.subjectLongName)) return@filter false
             val sameDayPersonal = personalByDate[cl.date] ?: emptyList()
             sameDayPersonal.none { p -> p.startTime < cl.endTime && cl.startTime < p.endTime }
         }.map { it.copy(isFromClassPlan = true) }
@@ -1000,7 +1000,9 @@ class WebUntisRepository @Inject constructor(
         diskKey("timetable_${sessionManager.timetableViewMode.name}_${sessionManager.timetableDays}" +
             // The combined view depends on which class-plan subjects fill gaps.
             if (sessionManager.timetableViewMode == SessionManager.TimetableViewMode.COMBINED)
-                "_" + Integer.toHexString(sessionManager.combinedOverlaySubjects.sorted().hashCode()) else ""),
+                "_" + sessionManager.combinedOverlayRule.let { r ->
+                    Integer.toHexString("${r.included.sorted()}|${r.excluded.sorted()}|${r.showRest}".hashCode())
+                } else ""),
         object : TypeToken<List<TimetableDay>>() {}.type
     )
 

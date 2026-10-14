@@ -188,11 +188,12 @@ class TimetableViewModel @Inject constructor(
 
     // ── Combined view: which class-plan subjects fill gaps in the personal plan ────────────────
 
-    val combinedOverlaySubjects: Set<String> get() = repository.sessionManager.combinedOverlaySubjects
+    val combinedOverlayRule: com.webuntis.dashboard.model.CombinedOverlayRule
+        get() = repository.sessionManager.combinedOverlayRule
 
-    /** Saves the chosen subjects and reloads. Switches to COMBINED mode if not already active. */
-    fun setCombinedOverlaySubjects(subjects: Set<String>) {
-        repository.setCombinedOverlaySubjects(subjects)
+    /** Saves the rule and reloads. Switches to COMBINED mode if not already active. */
+    fun setCombinedOverlayRule(rule: com.webuntis.dashboard.model.CombinedOverlayRule) {
+        repository.setCombinedOverlayRule(rule)
         if (timetableViewMode != SessionManager.TimetableViewMode.COMBINED) {
             repository.setTimetableViewMode(SessionManager.TimetableViewMode.COMBINED)
         }

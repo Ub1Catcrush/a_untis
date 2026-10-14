@@ -181,33 +181,112 @@ class TimetableFragment : Fragment() {
                 return@launch
             }
 
-            val selected = viewModel.combinedOverlaySubjects
+            val rule = viewModel.combinedOverlayRule
             // Stored/compared by shortName (abbreviation) — matches Lesson.subjectName elsewhere —
             // but shown as "Langname (Kürzel)" since abbreviations alone (e.g. "Sp", "D_G") can be
             // ambiguous to the user.
-            val checked = BooleanArray(available.size) { available[it].shortName in selected }
-            val labels = available.map { it.displayLabel }.toTypedArray()
-
-            // IMPORTANT: never combine setMessage() with setMultiChoiceItems()/setItems() on the
-            // same AlertDialog.Builder. AlertController only shows ONE of message-or-list — if a
-            // message is set, the list view never gets attached to the dialog at all, so it would
-            // silently render as an empty picker even though `available` is non-empty. The
-            // explanatory text is shown as a subtitle line under the title instead.
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(
-                    getString(R.string.timetable_combined_dialog_title) + "\n" +
-                    getString(R.string.timetable_combined_dialog_message)
-                )
-                .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                    checked[which] = isChecked
+            val labels = available.map { it.displayLabel }
+            // 0 = follows the rule for all other subjects, 1 = always show, 2 = always hide
+            val states = IntArray(available.size) {
+                val short = available[it].shortName
+                when {
+                    short in rule.excluded -> 2
+                    short in rule.included -> 1
+                    else -> 0
                 }
+            }
+            var showRest = rule.showRest
+
+            // IMPORTANT: never combine setMessage() with a list on the same AlertDialog.Builder —
+            // AlertController only shows ONE of message-or-list, so the picker would render
+            // empty. Title, explanation and the rule for the other subjects therefore live in a
+            // custom title view.
+            val ctx = requireContext()
+            val density = resources.displayMetrics.density
+            fun dp(v: Int) = (v * density).toInt()
+            fun muted(tv: android.widget.TextView) = tv.setTextColor(
+                com.google.android.material.color.MaterialColors.getColor(
+                    tv, com.google.android.material.R.attr.colorOnSurfaceVariant))
+
+            val titleView = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(dp(24), dp(20), dp(24), dp(8))
+            }
+            titleView.addView(android.widget.TextView(ctx).apply {
+                setText(R.string.timetable_combined_dialog_title)
+                textSize = 20f
+                setTextColor(com.google.android.material.color.MaterialColors.getColor(
+                    this, com.google.android.material.R.attr.colorOnSurface))
+            })
+            titleView.addView(android.widget.TextView(ctx).apply {
+                setText(R.string.timetable_combined_dialog_message)
+                textSize = 13f
+                setPadding(0, dp(6), 0, dp(10))
+                muted(this)
+            })
+            titleView.addView(android.widget.TextView(ctx).apply {
+                setText(R.string.timetable_combined_rest_label)
+                textSize = 12f
+                muted(this)
+            })
+            val toggle = com.google.android.material.button.MaterialButtonToggleGroup(ctx).apply {
+                isSingleSelection = true
+                isSelectionRequired = true
+            }
+            val btnHide = com.google.android.material.button.MaterialButton(
+                ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            ).apply { id = View.generateViewId(); setText(R.string.timetable_combined_rest_hide) }
+            val btnShow = com.google.android.material.button.MaterialButton(
+                ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            ).apply { id = View.generateViewId(); setText(R.string.timetable_combined_rest_show) }
+            toggle.addView(btnHide)
+            toggle.addView(btnShow)
+            toggle.check(if (showRest) btnShow.id else btnHide.id)
+            toggle.addOnButtonCheckedListener { _, id, isChecked ->
+                if (isChecked) showRest = id == btnShow.id
+            }
+            titleView.addView(toggle)
+            titleView.addView(android.widget.TextView(ctx).apply {
+                setText(R.string.timetable_combined_legend)
+                textSize = 12f
+                setPadding(0, dp(10), 0, 0)
+                muted(this)
+            })
+
+            fun symbol(state: Int) = when (state) { 1 -> "✔  "; 2 -> "✖  "; else -> "○  " }
+            val adapter = object : android.widget.ArrayAdapter<String>(
+                ctx, android.R.layout.simple_list_item_1, labels
+            ) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val v = super.getView(position, convertView, parent) as android.widget.TextView
+                    v.text = symbol(states[position]) + labels[position]
+                    v.setTypeface(null, if (states[position] == 0) android.graphics.Typeface.NORMAL else android.graphics.Typeface.BOLD)
+                    return v
+                }
+            }
+
+            val dialog = MaterialAlertDialogBuilder(ctx)
+                .setCustomTitle(titleView)
+                .setAdapter(adapter, null)
                 .setPositiveButton(R.string.timetable_combined_dialog_apply) { _, _ ->
-                    val chosen = available.filterIndexed { index, _ -> checked[index] }
-                        .map { it.shortName }.toSet()
-                    viewModel.setCombinedOverlaySubjects(chosen)
+                    viewModel.setCombinedOverlayRule(
+                        com.webuntis.dashboard.model.CombinedOverlayRule(
+                            included = available.filterIndexed { i, _ -> states[i] == 1 }.map { it.shortName }.toSet(),
+                            excluded = available.filterIndexed { i, _ -> states[i] == 2 }.map { it.shortName }.toSet(),
+                            showRest = showRest
+                        )
+                    )
                 }
                 .setNegativeButton(R.string.timetable_combined_dialog_cancel, null)
-                .show()
+                .create()
+            dialog.setOnShowListener {
+                // Tap cycles ○ → ✔ → ✖ without closing the dialog.
+                dialog.listView.setOnItemClickListener { _, _, position, _ ->
+                    states[position] = (states[position] + 1) % 3
+                    adapter.notifyDataSetChanged()
+                }
+            }
+            dialog.show()
         }
     }
 

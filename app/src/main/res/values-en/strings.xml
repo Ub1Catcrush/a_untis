@@ -77,8 +77,12 @@
     <string name="timetable_view_mode_personal">Me</string>
     <string name="timetable_view_mode_combined">Combined</string>
     <string name="timetable_combined_edit_subjects">Choose subjects for combined plan</string>
-    <string name="timetable_combined_dialog_title">Show class subjects</string>
-    <string name="timetable_combined_dialog_message">Selected subjects from the class plan are only filled into free slots in your personal plan.</string>
+    <string name="timetable_combined_dialog_title">Class subjects in combined plan</string>
+    <string name="timetable_combined_dialog_message">Class-plan subjects are only shown in free slots of your personal plan.</string>
+    <string name="timetable_combined_rest_label">All other subjects:</string>
+    <string name="timetable_combined_rest_hide">Hide</string>
+    <string name="timetable_combined_rest_show">Show</string>
+    <string name="timetable_combined_legend">Tap to cycle: ○ follows the rule above → ✔ always show → ✖ always hide</string>
     <string name="timetable_combined_dialog_empty">No subjects found in the class plan.</string>
     <string name="timetable_combined_dialog_apply">Apply</string>
     <string name="timetable_combined_dialog_cancel">Cancel</string>

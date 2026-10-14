@@ -1,5 +1,6 @@
 package com.webuntis.dashboard.api
 
+import com.webuntis.dashboard.model.CombinedOverlayRule
 import com.webuntis.dashboard.model.NameScreen
 import com.webuntis.dashboard.model.NameStyle
 import com.webuntis.dashboard.model.NameType
@@ -503,8 +504,8 @@ class SessionManager @Inject constructor(
 
     private val overlayGson = com.google.gson.Gson()
 
-    /** Subject names (as shown in the class plan) that are allowed to fill empty slots in COMBINED mode. */
-    var combinedOverlaySubjects: Set<String>
+    /** Legacy single list (include- or exclude-list depending on the legacy mode) — only read as migration source. */
+    private var combinedOverlaySubjects: Set<String>
         get() {
             val raw = plainPrefs.getString(KEY_COMBINED_OVERLAY_SUBJECTS, null) ?: return emptySet()
             return runCatching {
@@ -513,6 +514,23 @@ class SessionManager @Inject constructor(
         }
         set(value) {
             plainPrefs.edit().putString(KEY_COMBINED_OVERLAY_SUBJECTS, overlayGson.toJson(value.toTypedArray())).apply()
+        }
+
+    /** Rule deciding which class-plan subjects fill gaps in COMBINED mode (see [CombinedOverlayRule]).
+     *  Falls back to the older single-list model (`combined_overlay_subjects` + include/exclude
+     *  mode) until the user saves a rule once. */
+    var combinedOverlayRule: CombinedOverlayRule
+        get() {
+            plainPrefs.getString(KEY_COMBINED_OVERLAY_RULE, null)?.let { raw ->
+                runCatching { overlayGson.fromJson(raw, CombinedOverlayRule::class.java) }.getOrNull()?.let { return it }
+            }
+            val legacy = combinedOverlaySubjects
+            val excludeMode = plainPrefs.getString(KEY_COMBINED_OVERLAY_MODE, null) == "EXCLUDE"
+            return if (excludeMode) CombinedOverlayRule(excluded = legacy, showRest = true)
+                   else CombinedOverlayRule(included = legacy, showRest = false)
+        }
+        set(value) {
+            plainPrefs.edit().putString(KEY_COMBINED_OVERLAY_RULE, overlayGson.toJson(value)).apply()
         }
 
     var cacheTtlMinutes: Int
@@ -573,9 +591,13 @@ class SessionManager @Inject constructor(
             add("notificationCategories", com.google.gson.JsonObject().apply {
                 NotificationCategory.values().forEach { addProperty(it.name, isNotificationCategoryEnabled(it)) }
             })
-            add("combinedOverlaySubjects", com.google.gson.JsonArray().apply {
-                combinedOverlaySubjects.forEach { add(it) }
-            })
+            combinedOverlayRule.let { rule ->
+                add("combinedOverlayRule", com.google.gson.JsonObject().apply {
+                    add("included", com.google.gson.JsonArray().apply { rule.included.forEach { add(it) } })
+                    add("excluded", com.google.gson.JsonArray().apply { rule.excluded.forEach { add(it) } })
+                    addProperty("showRest", rule.showRest)
+                })
+            }
         }
         return gson.toJson(obj)
     }
@@ -695,8 +717,21 @@ class SessionManager @Inject constructor(
             obj.get("timetableViewMode")?.asString?.let { raw ->
                 runCatching { TimetableViewMode.valueOf(raw) }.getOrNull()?.let { timetableViewMode = it }
             }
-            obj.getAsJsonArray("combinedOverlaySubjects")?.let { arr ->
-                combinedOverlaySubjects = arr.mapNotNull { it.asString }.toSet()
+            val ruleObj = obj.getAsJsonObject("combinedOverlayRule")
+            if (ruleObj != null) {
+                combinedOverlayRule = CombinedOverlayRule(
+                    included = ruleObj.getAsJsonArray("included")?.mapNotNull { it.asString }?.toSet() ?: emptySet(),
+                    excluded = ruleObj.getAsJsonArray("excluded")?.mapNotNull { it.asString }?.toSet() ?: emptySet(),
+                    showRest = ruleObj.get("showRest")?.asBoolean ?: false
+                )
+            } else {
+                // Backup from the single-list model (subjects + optional INCLUDE/EXCLUDE mode).
+                val subjects = obj.getAsJsonArray("combinedOverlaySubjects")?.mapNotNull { it.asString }?.toSet()
+                if (subjects != null) {
+                    combinedOverlayRule = if (obj.get("combinedOverlayMode")?.asString == "EXCLUDE")
+                        CombinedOverlayRule(excluded = subjects, showRest = true)
+                    else CombinedOverlayRule(included = subjects, showRest = false)
+                }
             }
 
             ImportResult.Success(primaryUpdated = primaryUpdated, secondUpdated = secondUpdated)
@@ -755,6 +790,8 @@ class SessionManager @Inject constructor(
         private const val KEY_LESSON_CONTENT_GROUP_MODE = "lesson_content_group_mode"
         private const val KEY_TIMETABLE_VIEW_MODE    = "timetable_view_mode"
         private const val KEY_COMBINED_OVERLAY_SUBJECTS = "combined_overlay_subjects"
+        private const val KEY_COMBINED_OVERLAY_MODE     = "combined_overlay_mode"   // legacy
+        private const val KEY_COMBINED_OVERLAY_RULE     = "combined_overlay_rule"
         private const val KEY_NOTIFICATIONS_ENABLED  = "notifications_enabled"
         private const val KEY_NOTIF_CATEGORY_PREFIX  = "notif_category_"
         private const val KEY_LAST_NOTIFIED_SNAPSHOT = "last_notified_snapshot"

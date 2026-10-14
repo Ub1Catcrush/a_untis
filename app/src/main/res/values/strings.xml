@@ -79,8 +79,12 @@
     <string name="timetable_view_day">Tag</string>
     <string name="timetable_view_week">Woche</string>
     <string name="timetable_combined_edit_subjects">Fächer für kombinierten Plan wählen</string>
-    <string name="timetable_combined_dialog_title">Klassenfächer einblenden</string>
-    <string name="timetable_combined_dialog_message">Ausgewählte Fächer aus dem Klassenplan werden nur in freie Stunden deines persönlichen Plans eingeblendet.</string>
+    <string name="timetable_combined_dialog_title">Klassenfächer im kombinierten Plan</string>
+    <string name="timetable_combined_dialog_message">Klassenfächer werden nur in freie Stunden deines persönlichen Plans eingeblendet.</string>
+    <string name="timetable_combined_rest_label">Alle anderen Fächer:</string>
+    <string name="timetable_combined_rest_hide">Ausblenden</string>
+    <string name="timetable_combined_rest_show">Einblenden</string>
+    <string name="timetable_combined_legend">Antippen wechselt: ○ folgt der Regel oben → ✔ immer einblenden → ✖ immer ausblenden</string>
     <string name="timetable_combined_dialog_empty">Im Klassenplan wurden keine Fächer gefunden.</string>
     <string name="timetable_combined_dialog_apply">Übernehmen</string>
     <string name="timetable_combined_dialog_cancel">Abbrechen</string>

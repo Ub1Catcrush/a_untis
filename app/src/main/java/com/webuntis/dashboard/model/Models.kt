@@ -204,6 +204,28 @@ data class ClassSubjectOption(val shortName: String, val longName: String) {
         get() = if (longName.isNotBlank() && longName != shortName) "$longName ($shortName)" else shortName
 }
 
+/**
+ * Which class-plan subjects may fill free slots in the COMBINED timetable.
+ * Each subject can be explicitly [included] (shown), explicitly [excluded] (hidden), or left
+ * unlisted — unlisted subjects follow [showRest]. Explicit marks win over [showRest]; if a lesson
+ * somehow matches both lists (short/long name clash) the exclusion wins. Subjects are stored by
+ * their short name, same as Lesson.subjectName.
+ */
+data class CombinedOverlayRule(
+    val included: Set<String> = emptySet(),
+    val excluded: Set<String> = emptySet(),
+    val showRest: Boolean = false
+) {
+    fun allows(shortName: String?, longName: String?): Boolean {
+        fun hit(set: Set<String>) = (shortName != null && shortName in set) || (longName != null && longName in set)
+        return when {
+            hit(excluded) -> false
+            hit(included) -> true
+            else          -> showRest
+        }
+    }
+}
+
 data class NamedItem(
     val id: Int?, val name: String?, val longname: String?,
     // Original short/long name before a swap (e.g. the previous room on a room change),
