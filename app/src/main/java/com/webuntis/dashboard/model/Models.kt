@@ -208,7 +208,9 @@ data class ClassSubjectOption(val shortName: String, val longName: String) {
  * Which class-plan subjects may fill free slots in the COMBINED timetable.
  * Each subject can be explicitly [included] (shown), explicitly [excluded] (hidden), or left
  * unlisted — unlisted subjects follow [showRest]. Explicit marks win over [showRest]; if a lesson
- * somehow matches both lists (short/long name clash) the exclusion wins. Subjects are stored by
+ * somehow matches both lists (short/long name clash) the exclusion wins. [excluded] hides the
+ * subject everywhere in the combined plan (own lessons as well as class-plan fill-ins), while
+ * [included]/[showRest] only decide which class-plan subjects are added. Subjects are stored by
  * their short name, same as Lesson.subjectName.
  */
 data class CombinedOverlayRule(
@@ -216,13 +218,18 @@ data class CombinedOverlayRule(
     val excluded: Set<String> = emptySet(),
     val showRest: Boolean = false
 ) {
-    fun allows(shortName: String?, longName: String?): Boolean {
-        fun hit(set: Set<String>) = (shortName != null && shortName in set) || (longName != null && longName in set)
-        return when {
-            hit(excluded) -> false
-            hit(included) -> true
-            else          -> showRest
-        }
+    private fun hit(set: Set<String>, shortName: String?, longName: String?) =
+        (shortName != null && shortName in set) || (longName != null && longName in set)
+
+    /** True if the subject is explicitly marked "always hide" — applies to the personal-plan
+     *  lessons in the combined view too, not just to class-plan lessons filled into gaps. */
+    fun excludes(shortName: String?, longName: String?): Boolean = hit(excluded, shortName, longName)
+
+    /** Whether a CLASS-plan lesson of this subject may fill a gap. */
+    fun allows(shortName: String?, longName: String?): Boolean = when {
+        excludes(shortName, longName)        -> false
+        hit(included, shortName, longName)   -> true
+        else                                 -> showRest
     }
 }
 

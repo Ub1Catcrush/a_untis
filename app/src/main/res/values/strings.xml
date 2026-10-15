@@ -84,7 +84,7 @@
     <string name="timetable_combined_rest_label">Alle anderen Fächer:</string>
     <string name="timetable_combined_rest_hide">Ausblenden</string>
     <string name="timetable_combined_rest_show">Einblenden</string>
-    <string name="timetable_combined_legend">Antippen wechselt: ○ folgt der Regel oben → ✔ immer einblenden → ✖ immer ausblenden</string>
+    <string name="timetable_combined_legend">Antippen wechselt: ○ folgt der Regel oben → ✔ Klassenfach einblenden → ✖ überall ausblenden (auch im eigenen Plan)</string>
     <string name="timetable_combined_dialog_empty">Im Klassenplan wurden keine Fächer gefunden.</string>
     <string name="timetable_combined_dialog_apply">Übernehmen</string>
     <string name="timetable_combined_dialog_cancel">Abbrechen</string>

@@ -82,7 +82,7 @@
     <string name="timetable_combined_rest_label">All other subjects:</string>
     <string name="timetable_combined_rest_hide">Hide</string>
     <string name="timetable_combined_rest_show">Show</string>
-    <string name="timetable_combined_legend">Tap to cycle: ○ follows the rule above → ✔ always show → ✖ always hide</string>
+    <string name="timetable_combined_legend">Tap to cycle: ○ follows the rule above → ✔ show class subject → ✖ hide everywhere (also in your own plan)</string>
     <string name="timetable_combined_dialog_empty">No subjects found in the class plan.</string>
     <string name="timetable_combined_dialog_apply">Apply</string>
     <string name="timetable_combined_dialog_cancel">Cancel</string>

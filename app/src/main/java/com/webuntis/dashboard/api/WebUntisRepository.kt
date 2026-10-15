@@ -377,9 +377,10 @@ class WebUntisRepository @Inject constructor(
     }
 
     /**
-     * Returns the distinct subject names currently available in the class plan, for the
-     * "which subjects should fill gaps in my plan?" picker. Best-effort — returns an empty
-     * list if the class plan can't be fetched right now.
+     * Returns the distinct subjects for the combined-plan picker: everything in the class plan
+     * plus everything in the user's own plan (own courses may not exist in the class plan, and
+     * "always hide" must be able to target them). Best-effort — each source that can't be
+     * fetched right now is simply skipped.
      */
     suspend fun getAvailableClassSubjects(): List<ClassSubjectOption> {
         val session = sessionManager.session ?: return emptyList()
@@ -387,8 +388,16 @@ class WebUntisRepository @Inject constructor(
         val today = LocalDate.now()
         val startIso = today.toIso()
         val endIso = today.plusDays(sessionManager.timetableDays.coerceAtLeast(7).toLong()).toIso()
-        val result = fetchLessonsV1(startIso, endIso, session.classId, "CLASS", "STANDARD", 1)
-        val lessons = result.getOrNull() ?: return emptyList()
+        val studentId = sessionManager.studentId
+        val lessons = coroutineScope {
+            val classDeferred = async { fetchLessonsV1(startIso, endIso, session.classId, "CLASS", "STANDARD", 1) }
+            val personalDeferred = async {
+                if (studentId != 0) fetchLessonsV1(startIso, endIso, studentId, "STUDENT", "MY_TIMETABLE", 5)
+                else Result.success(emptyList<Lesson>())
+            }
+            classDeferred.await().getOrDefault(emptyList()) + personalDeferred.await().getOrDefault(emptyList())
+        }
+        if (lessons.isEmpty()) return emptyList()
         // Keyed by shortName (what's actually matched/stored) — first non-blank long name wins,
         // since the same abbreviation can occasionally carry slightly different lessonInfo per entry.
         val byShortName = linkedMapOf<String, String>()
@@ -976,22 +985,26 @@ class WebUntisRepository @Inject constructor(
     }
 
     /**
-     * Adds class-plan lessons into the personal list, but ONLY for slots that are actually empty
-     * in the personal plan (same date, no time overlap with any personal lesson) and only for
-     * subjects [rule] allows. Added entries are marked [Lesson.isFromClassPlan] so the UI can
-     * label/style them distinctly.
+     * Builds the combined plan: the personal lessons (minus subjects marked "always hide"), plus
+     * class-plan lessons filled into slots that are actually empty in the personal plan (same
+     * date, no time overlap with any personal lesson) and only for subjects [rule] allows.
+     * Added entries are marked [Lesson.isFromClassPlan] so the UI can label/style them distinctly.
+     *
+     * A hidden personal lesson still counts as occupying its slot — hiding a subject doesn't turn
+     * its period into a gap that other class subjects would then fill.
      */
     private fun buildCombinedLessons(
         personal: List<Lesson>, classLessons: List<Lesson>, rule: CombinedOverlayRule
     ): List<Lesson> {
-        if (!rule.showRest && rule.included.isEmpty()) return personal
+        val visiblePersonal = personal.filterNot { rule.excludes(it.subjectName, it.subjectLongName) }
+        if (!rule.showRest && rule.included.isEmpty()) return visiblePersonal
         val personalByDate = personal.groupBy { it.date }
         val overlay = classLessons.filter { cl ->
             if (!rule.allows(cl.subjectName, cl.subjectLongName)) return@filter false
             val sameDayPersonal = personalByDate[cl.date] ?: emptyList()
             sameDayPersonal.none { p -> p.startTime < cl.endTime && cl.startTime < p.endTime }
         }.map { it.copy(isFromClassPlan = true) }
-        return personal + overlay
+        return visiblePersonal + overlay
     }
 
     // Mode and day count are part of the key: a different personal/class/combined view or
