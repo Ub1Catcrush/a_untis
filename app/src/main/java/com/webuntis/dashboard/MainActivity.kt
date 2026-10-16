@@ -1,5 +1,7 @@
 package com.webuntis.dashboard
 
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -21,12 +23,17 @@ import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import com.webuntis.dashboard.api.AppForegroundEvents
 import com.webuntis.dashboard.api.ChangeSnapshot
+import com.webuntis.dashboard.api.UpdateGate
 import com.webuntis.dashboard.api.UpdateManager
 import com.webuntis.dashboard.databinding.ActivityMainBinding
 import com.webuntis.dashboard.ui.login.LoginViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import javax.inject.Inject
 
 data class NavItem(val destinationId: Int, val iconRes: Int, val labelRes: Int)
@@ -43,6 +50,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var appForegroundEvents: AppForegroundEvents
+
+    @Inject
+    lateinit var updateGate: UpdateGate
 
     private val navItems = listOf(
         NavItem(R.id.timetableFragment,  R.drawable.ic_calendar, R.string.nav_timetable),
@@ -101,8 +111,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Automatic update check on app launch
-        checkUpdatesSilently()
+        // Update check on app launch — BEFORE anything logs in or opens a data screen.
+        runUpdateGate()
 
         // In-app fallback for missed changes: WebUntisApp already kicks an immediate
         // PlanChangeCheckWorker run on cold start / returning from the background (see
@@ -144,22 +154,73 @@ class MainActivity : AppCompatActivity() {
         if (hasUnseen) navController.navigate(R.id.recentChangesDialogFragment)
     }
 
-    private fun checkUpdatesSilently() {
-        // F-Droid builds are updated by F-Droid itself — no in-app updater there.
-        if (!BuildConfig.SELF_UPDATE) return
+    /**
+     * Start-up sequence: update check first, login (and the screens behind it) afterwards.
+     *
+     * With a connection (and an updater-enabled build) the check runs under a full-screen
+     * overlay. If an update exists the user is asked right away; the app only continues once
+     * they declined, the install was handed over to the system, or they skipped the download.
+     * Without a connection, in F-Droid builds, on a failed/slow check (timeout) or when already
+     * up to date the gate opens immediately and the app starts as usual. Reason for the order: a
+     * crash after login (which the update might fix) used to hit before the update dialog could
+     * ever show — see [UpdateGate].
+     */
+    private fun runUpdateGate() {
+        if (updateGate.isOpen.value) return   // already done in this process (e.g. rotation)
+        if (!BuildConfig.SELF_UPDATE || !hasInternetConnection()) {
+            updateGate.open()
+            return
+        }
+        showUpdateGate(R.string.settings_update_checking, skippable = false)
         lifecycleScope.launch {
-            updateManager.checkForUpdates().onSuccess { info ->
-                if (info.hasUpdate && info.downloadUrl != null) {
-                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle(getString(R.string.settings_update_dialog_title_main))
-                        .setMessage(getString(R.string.settings_update_dialog_message_main, info.latestVersion, info.releaseNotes ?: ""))
-                        .setPositiveButton(getString(R.string.settings_update_dialog_install)) { _, _ ->
-                            updateManager.downloadAndInstall(info.downloadUrl, "webuntis-dashboard-${info.latestVersion}.apk")
-                        }
-                        .setNegativeButton(getString(R.string.settings_update_dialog_later), null)
-                        .show()
+            try {
+                val info = withTimeoutOrNull(UPDATE_CHECK_TIMEOUT_MS) { updateManager.checkForUpdates().getOrNull() }
+                val url = info?.downloadUrl
+                if (info != null && info.hasUpdate && url != null && askInstallUpdate(info)) {
+                    showUpdateGate(R.string.update_gate_downloading, skippable = true)
+                    awaitDownloadAndInstall(url, "webuntis-dashboard-${info.latestVersion}.apk")
                 }
+            } catch (e: CancellationException) {
+                // Activity went away mid-check: leave the gate closed, the next start re-checks.
+                throw e
+            } catch (e: Exception) {
+                // Never let the update check itself block the app.
             }
+            binding.updateGateOverlay.visibility = View.GONE
+            updateGate.open()
+        }
+    }
+
+    private fun showUpdateGate(statusRes: Int, skippable: Boolean) {
+        binding.updateGateOverlay.visibility = View.VISIBLE
+        binding.updateGateStatus.setText(statusRes)
+        binding.updateGateSkip.visibility = if (skippable) View.VISIBLE else View.GONE
+    }
+
+    private fun hasInternetConnection(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /** true = install now, false = later. The dialog is not cancellable: one of the two must be chosen. */
+    private suspend fun askInstallUpdate(info: UpdateManager.UpdateInfo): Boolean =
+        suspendCancellableCoroutine { cont ->
+            val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.settings_update_dialog_title_main))
+                .setMessage(getString(R.string.settings_update_dialog_message_main, info.latestVersion, info.releaseNotes ?: ""))
+                .setCancelable(false)
+                .setPositiveButton(getString(R.string.settings_update_dialog_install)) { _, _ -> if (cont.isActive) cont.resume(true) }
+                .setNegativeButton(getString(R.string.settings_update_dialog_later)) { _, _ -> if (cont.isActive) cont.resume(false) }
+                .show()
+            cont.invokeOnCancellation { dialog.dismiss() }
+        }
+
+    /** Returns once the installer was launched, the download couldn't start, or the user skipped. */
+    private suspend fun awaitDownloadAndInstall(url: String, fileName: String) {
+        suspendCancellableCoroutine<Unit> { cont ->
+            binding.updateGateSkip.setOnClickListener { if (cont.isActive) cont.resume(Unit) }
+            updateManager.downloadAndInstall(url, fileName) { if (cont.isActive) cont.resume(Unit) }
         }
     }
 
@@ -217,5 +278,10 @@ class MainActivity : AppCompatActivity() {
         val color = ta.getColor(0, 0)
         ta.recycle()
         return color
+    }
+
+    private companion object {
+        /** Longest the start waits for the update check before just continuing. */
+        const val UPDATE_CHECK_TIMEOUT_MS = 5_000L
     }
 }

@@ -104,9 +104,15 @@ class UpdateManager @Inject constructor(
         return true
     }
 
-    fun downloadAndInstall(url: String, fileName: String) {
+    /**
+     * Downloads [url] and hands the APK to the system installer when done. [onFinished] runs once
+     * that hand-over happened — or immediately when nothing can be downloaded (missing install
+     * permission, enqueue failed) — so the start-up update gate knows when to continue.
+     */
+    fun downloadAndInstall(url: String, fileName: String, onFinished: (() -> Unit)? = null) {
         if (!checkInstallPermission()) {
             Toast.makeText(context, context.getString(R.string.settings_update_permission_required), Toast.LENGTH_LONG).show()
+            onFinished?.invoke()
             return
         }
 
@@ -122,7 +128,13 @@ class UpdateManager @Inject constructor(
             .setAllowedOverRoaming(true)
 
         val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val downloadId = downloadManager.enqueue(request)
+        val downloadId = try {
+            downloadManager.enqueue(request)
+        } catch (e: Exception) {
+            Log.e(tag, "Download konnte nicht gestartet werden", e)
+            onFinished?.invoke()
+            return
+        }
 
         val onComplete = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -130,6 +142,7 @@ class UpdateManager @Inject constructor(
                 if (id == downloadId) {
                     installApk(destination)
                     context.unregisterReceiver(this)
+                    onFinished?.invoke()
                 }
             }
         }

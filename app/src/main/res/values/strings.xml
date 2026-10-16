@@ -308,6 +308,8 @@
     <string name="settings_update_check_failed">Update-Check fehlgeschlagen: %s</string>
     <string name="settings_update_permission_required">Bitte erlaube der App, Updates zu installieren.</string>
     <string name="settings_update_install_failed">Installation fehlgeschlagen: %s</string>
+    <string name="update_gate_downloading">Update wird heruntergeladen…</string>
+    <string name="update_gate_skip">Überspringen</string>
     <string name="settings_update_dialog_title_main">A*Untis Update</string>
     <string name="settings_update_dialog_message_main">Eine neue Version (v%1$s) ist verfügbar. Möchtest du sie jetzt installieren?\n\n%2$s</string>
 

@@ -37,6 +37,24 @@
 # class the call site expected.
 -keep class com.webuntis.dashboard.api.ChangeSnapshot { *; }
 -keep class com.webuntis.dashboard.api.ChangeLogEntry { *; }
+# Everything else that Gson persists/reads and that lives OUTSIDE the model package. Their
+# fields carry generics (List<Lesson>, ...); R8 (full mode) strips the generic Signature of
+# members of classes it isn't told to keep, so Gson then reads the list elements as raw
+# LinkedTreeMap and the first access fails with
+#   ClassCastException: com.google.gson.internal.LinkedTreeMap cannot be cast to ...model.Lesson
+# (seen on timetable start when the disk cache is read). Keeping them also pins the field names,
+# which matters for data written by one build and read by the next (disk cache, saved accounts).
+-keep class com.webuntis.dashboard.api.TimetableDay { *; }
+-keep class com.webuntis.dashboard.api.WebUntisRepository$TeachingContentCache { *; }
+-keep class com.webuntis.dashboard.api.SessionManager$SecondAccount { *; }
+# kotlin.Pair is used as Gson target type (Pair<List<Homework>, Map<...>> etc. in the disk cache).
+-keep class kotlin.Pair { *; }
+# School search (public WebUntis endpoint): request/response models are @Keep-annotated; the
+# Retrofit interface is kept like WebUntisService above.
+-keep,allowobfuscation interface com.webuntis.dashboard.api.SchoolSearchService
+-keepclassmembers,allowobfuscation interface com.webuntis.dashboard.api.SchoolSearchService {
+    <methods>;
+}
 -keepclassmembers class * {
     @com.google.gson.annotations.SerializedName <fields>;
 }

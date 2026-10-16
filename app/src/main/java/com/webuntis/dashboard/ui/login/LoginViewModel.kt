@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -21,7 +22,8 @@ import javax.inject.Inject
 class LoginViewModel @Inject constructor(
     val sessionManager: SessionManager,
     val repository: WebUntisRepository,
-    private val schoolSearchService: SchoolSearchService
+    private val schoolSearchService: SchoolSearchService,
+    private val updateGate: com.webuntis.dashboard.api.UpdateGate
 ) : ViewModel() {
 
     // ── School search (login screen) ──────────────────────────────────────────
@@ -80,6 +82,9 @@ class LoginViewModel @Inject constructor(
         if (session != null && creds != null && !isLoggingIn) {
             isLoggingIn = true
             viewModelScope.launch {
+                // The start-up update check (MainActivity.runUpdateGate) runs first; logging in
+                // — and with it opening the data screens — only happens once it has finished.
+                updateGate.isOpen.first { it }
                 _loginState.value = LoginState.Loading
                 val result = repository.login(
                     session.server, session.schoolname,
