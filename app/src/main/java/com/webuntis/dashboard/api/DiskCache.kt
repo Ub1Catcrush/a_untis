@@ -38,6 +38,13 @@ class DiskCache @Inject constructor(
 ) {
     private val tag = "DiskCache"
 
+    private companion object {
+        /** Bump when the stored JSON can no longer be read by the current code — e.g. 2: field
+         *  names of TimetableDay / Pair / TeachingContentCache are no longer obfuscated by R8, so
+         *  files written by earlier release builds (renamed fields) must be discarded. */
+        const val CACHE_FORMAT = 2
+    }
+
     private val dir: File by lazy {
         File(context.noBackupFilesDir, "data_cache").also { it.mkdirs() }
     }
@@ -70,7 +77,7 @@ class DiskCache @Inject constructor(
         if (!f.exists()) return null
         return try {
             val root = gson.fromJson(f.readText(), JsonObject::class.java)
-            if (root.get("v")?.asLong != appVersion) { f.delete(); return null }
+            if (root.get("v")?.asLong != appVersion || root.get("fmt")?.asInt != CACHE_FORMAT) { f.delete(); return null }
             val fetchedAt = root.get("fetchedAt").asLong
             val data: T = gson.fromJson(root.get("data"), type) ?: return null
             fetchedAt to data
@@ -87,6 +94,7 @@ class DiskCache @Inject constructor(
         try {
             val root = JsonObject().apply {
                 addProperty("v", appVersion)
+                addProperty("fmt", CACHE_FORMAT)
                 addProperty("fetchedAt", fetchedAt)
                 add("data", gson.toJsonTree(data))
             }

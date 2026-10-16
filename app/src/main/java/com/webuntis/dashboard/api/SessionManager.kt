@@ -253,11 +253,7 @@ class SessionManager @Inject constructor(
         get() {
             val json = prefs.getString(KEY_ADDITIONAL_ACCOUNTS, null)
             if (json != null) {
-                return try {
-                    overlayGson.fromJson<List<SecondAccount>>(
-                        json, object : com.google.gson.reflect.TypeToken<List<SecondAccount>>() {}.type
-                    ) ?: emptyList()
-                } catch (e: Exception) { emptyList() }
+                return parseAdditionalAccounts(json)
             }
             // One-time migration from the old single-account keys.
             val legacyUser = prefs.getString(KEY_SECOND_USER, null)
@@ -278,8 +274,45 @@ class SessionManager @Inject constructor(
             return migrated
         }
         set(value) {
-            prefs.edit().putString(KEY_ADDITIONAL_ACCOUNTS, overlayGson.toJson(value)).apply()
+            prefs.edit().putString(KEY_ADDITIONAL_ACCOUNTS, additionalAccountsToJson(value)).apply()
         }
+
+    /**
+     * Read/written by hand instead of via Gson reflection on purpose: reflection maps JSON keys to
+     * FIELD NAMES, and release (R8) builds without a keep rule rename those — so an account list
+     * saved by one build came back with null fields in the next (-> NullPointerException the moment
+     * Settings rendered it). Plain keys are independent of any renaming. Entries that can't be
+     * read (e.g. written by a build with renamed fields) are skipped rather than crashing; that
+     * account just has to be added again.
+     */
+    private fun parseAdditionalAccounts(json: String): List<SecondAccount> = try {
+        com.google.gson.JsonParser.parseString(json).asJsonArray.mapNotNull { el ->
+            val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+            fun str(key: String): String? = o.get(key)?.takeIf { it.isJsonPrimitive }?.asString
+            val username = str("username")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val password = str("password") ?: return@mapNotNull null
+            SecondAccount(
+                username   = username,
+                password   = password,
+                label      = str("label") ?: username,
+                personType = o.get("personType")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
+                personName = str("personName") ?: ""
+            )
+        }
+    } catch (e: Exception) { emptyList() }
+
+    private fun additionalAccountsToJson(accounts: List<SecondAccount>): String =
+        com.google.gson.JsonArray().apply {
+            accounts.forEach { a ->
+                add(com.google.gson.JsonObject().apply {
+                    addProperty("username", a.username)
+                    addProperty("password", a.password)
+                    addProperty("label", a.label)
+                    addProperty("personType", a.personType)
+                    addProperty("personName", a.personName)
+                })
+            }
+        }.toString()
 
     fun addOrUpdateAdditionalAccount(account: SecondAccount) {
         val current = additionalAccounts.toMutableList()
