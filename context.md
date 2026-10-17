@@ -67,3 +67,10 @@ Native Android application (Kotlin) for student/parent WebUntis dashboards.
 ## Persistence & R8 (release builds)
 - Anything stored via Gson REFLECTION is keyed by Kotlin field names. In minified builds R8 renames fields of classes without keep rules, so data written by one build can come back with null fields in the next. Classes persisted that way must have keep rules (see proguard-rules.pro) or be (de)serialized by hand.
 - `SessionManager.additionalAccounts` is read/written manually (plain keys username/password/label/personType/personName) and skips unreadable entries. `DiskCache.CACHE_FORMAT` invalidates cache files written under an older storage format — bump it whenever stored classes/field names change.
+
+## Start without login mask (cache-first start)
+- With stored credentials (`LoginViewModel.hasStoredLogin`) `isLoggedIn` starts as TRUE: after the update gate the app navigates straight to the timetable and shows cached data (memory/disk) while the login runs in the background (`LoginViewModel.init`). A start overlay hides the login screen meanwhile (removed by the isLoggedIn collector in MainActivity after navigating).
+- Login result: success -> normal; network/server problem (`isTransientFailure`: IOException in the cause chain, "HTTP 5xx", empty response) -> stay in the app on cached data; anything else (server rejected the credentials) -> `isLoggedIn=false` + `LoginState.Error(msg)` -> login mask with the reason. No stored credentials -> login mask as before.
+- `LoginFragment` uses the ACTIVITY-scoped `LoginViewModel` (one shared instance, one auto-login).
+- Silent re-auth (`reAuthSilently`) clears the in-memory caches only; the disk cache is kept (it is per server+user and is what the next start paints first). `clearAllDataCaches()` (memory + disk) remains for logout / write operations / explicit cache clearing.
+- Every tab's ViewModel follows stale-while-revalidate: `peek*` (memory, then disk, ignoring age) -> state Success at once, then `get*` refreshes silently; a failed refresh never replaces content already shown; Loading/Error only when nothing is cached.

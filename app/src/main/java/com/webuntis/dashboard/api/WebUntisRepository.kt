@@ -159,7 +159,11 @@ class WebUntisRepository @Inject constructor(
                     if (id > 0) sessionManager.studentId = id
                 }
 
-                clearAllDataCaches() // Flush stale data from old session
+                // Memory only. The disk cache is scoped per server+user, so it can't belong to
+                // another login — and it is exactly what the screens paint first on the next
+                // start (cache-first). Wiping it here, right after the user saw it, left nothing
+                // to show whenever the following refresh failed (offline, server hiccup).
+                clearMemoryCaches()
                 android.util.Log.i("WebUntis", "Silent re-auth successful. Session valid.")
                 return@withLock resolvedSession?.let { Result.success(it) } ?: result
             } else {
@@ -355,11 +359,16 @@ class WebUntisRepository @Inject constructor(
     }
 
     private fun clearAllDataCaches() {
+        clearMemoryCaches()
+        diskCache.clearAll()
+    }
+
+    /** Drops the in-memory caches only; the next read falls back to the (still valid) disk cache. */
+    private fun clearMemoryCaches() {
         cacheTimetableByAccount.clear(); cacheHomeworkByAccount.clear(); cacheEventsByAccount.clear()
         cacheClassbookByAccount.clear(); cacheSchoolYear = null; cacheAbsencesByAccount.clear(); cacheMessages = null; cacheSentMessages = null; cacheDraftMessages = null; cacheTeachers = null
         cacheTeachingContentByAccount.clear(); cacheEventsPastByAccount.clear()
         cacheAbsencesMetaByAccount.clear(); cacheTimegrid = null
-        diskCache.clearAll()
     }
 
     /** Switches between the personal ("MY_TIMETABLE") and class ("STANDARD") timetable views. */

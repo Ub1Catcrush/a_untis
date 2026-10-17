@@ -30,6 +30,7 @@ import com.webuntis.dashboard.ui.login.LoginViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -96,6 +97,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 loginViewModel.isLoggedIn.collect { loggedIn ->
+                    // Nothing navigates (and with it nothing opens or logs in) before the
+                    // start-up update check has finished.
+                    updateGate.isOpen.first { it }
                     val current = navController.currentDestination?.id
                     if (loggedIn && current == R.id.loginFragment) {
                         navController.navigate(R.id.action_login_to_timetable)
@@ -107,6 +111,9 @@ class MainActivity : AppCompatActivity() {
                     // right after onCreate (the login-check navigation above hasn't settled yet
                     // at that point, even when the user is already logged in).
                     if (loggedIn) checkAndShowUnseenChanges()
+                    // The start overlay hid the login screen while the app decided where to
+                    // go; posted so the target screen is attached before the cover comes off.
+                    binding.root.post { binding.updateGateOverlay.visibility = View.GONE }
                 }
             }
         }
@@ -168,6 +175,9 @@ class MainActivity : AppCompatActivity() {
     private fun runUpdateGate() {
         if (updateGate.isOpen.value) return   // already done in this process (e.g. rotation)
         if (!BuildConfig.SELF_UPDATE || !hasInternetConnection()) {
+            // No check needed. With stored credentials the app skips the login mask: keep it
+            // covered until the isLoggedIn collector has navigated on (it removes the overlay).
+            if (loginViewModel.hasStoredLogin) showUpdateGate(null, skippable = false)
             updateGate.open()
             return
         }
@@ -186,14 +196,16 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 // Never let the update check itself block the app.
             }
-            binding.updateGateOverlay.visibility = View.GONE
+            // Stored credentials → the isLoggedIn collector takes the overlay down once it has
+            // navigated past the login screen; otherwise the login mask is the next screen.
+            if (!loginViewModel.hasStoredLogin) binding.updateGateOverlay.visibility = View.GONE
             updateGate.open()
         }
     }
 
-    private fun showUpdateGate(statusRes: Int, skippable: Boolean) {
+    private fun showUpdateGate(statusRes: Int?, skippable: Boolean) {
         binding.updateGateOverlay.visibility = View.VISIBLE
-        binding.updateGateStatus.setText(statusRes)
+        if (statusRes != null) binding.updateGateStatus.setText(statusRes) else binding.updateGateStatus.text = ""
         binding.updateGateSkip.visibility = if (skippable) View.VISIBLE else View.GONE
     }
 

@@ -66,7 +66,14 @@ class LoginViewModel @Inject constructor(
         _searchState.value = SchoolSearchState.Idle
     }
 
-    private val _isLoggedIn = MutableStateFlow(false)
+    /** True if a previous login left everything needed to sign in again without asking. */
+    val hasStoredLogin: Boolean
+        get() = sessionManager.session != null && sessionManager.storedCredentials != null
+
+    // Optimistic: with stored credentials the app is treated as logged in from the start, so it
+    // opens straight on the cached data and signs in behind the scenes. The login mask only
+    // comes back if the server actually rejects the credentials (see init).
+    private val _isLoggedIn = MutableStateFlow(hasStoredLogin)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn
 
     private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
@@ -76,28 +83,50 @@ class LoginViewModel @Inject constructor(
     @Volatile private var isLoggingIn = false
 
     init {
-        // On app start: silently re-authenticate with stored credentials once.
+        // On app start: silently re-authenticate with stored credentials once — in the
+        // background; the screens already show their cached data meanwhile.
         val session = sessionManager.session
         val creds   = sessionManager.storedCredentials
         if (session != null && creds != null && !isLoggingIn) {
             isLoggingIn = true
             viewModelScope.launch {
                 // The start-up update check (MainActivity.runUpdateGate) runs first; logging in
-                // — and with it opening the data screens — only happens once it has finished.
+                // only happens once it has finished.
                 updateGate.isOpen.first { it }
                 _loginState.value = LoginState.Loading
                 val result = repository.login(
                     session.server, session.schoolname,
                     creds.first, creds.second
                 )
-                _loginState.value = LoginState.Idle
                 if (result.isSuccess) {
                     repository.primeCachedElementIdIfNeeded()
+                    _loginState.value = LoginState.Idle
+                    _isLoggedIn.value = true
+                } else {
+                    val error = result.exceptionOrNull()
+                    if (isTransientFailure(error)) {
+                        // Offline or the server is having a moment: nothing wrong with the
+                        // credentials, so stay in the app with the cached data. Every refresh
+                        // signs in again on its own as soon as the connection is back.
+                        _loginState.value = LoginState.Idle
+                        _isLoggedIn.value = true
+                    } else {
+                        // The server answered and said no (changed password, account gone, …):
+                        // only now is the login mask needed — with the reason shown on it.
+                        _loginState.value = LoginState.Error(error?.message ?: "Anmeldung fehlgeschlagen")
+                        _isLoggedIn.value = false
+                    }
                 }
-                _isLoggedIn.value = result.isSuccess
                 isLoggingIn = false
             }
         }
+    }
+
+    /** Network problems and server-side errors say nothing about the credentials themselves. */
+    private fun isTransientFailure(error: Throwable?): Boolean {
+        if (generateSequence(error) { it.cause }.any { it is java.io.IOException }) return true
+        val message = error?.message.orEmpty()
+        return message.startsWith("HTTP 5") || message.contains("Leere Antwort")
     }
 
     fun login(server: String, schoolname: String, username: String, password: String) {
