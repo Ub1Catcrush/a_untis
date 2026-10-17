@@ -131,7 +131,7 @@ class WebUntisRepository @Inject constructor(
 
             val rpc = loginViaJsonRpc(server, schoolname, username, password)
             val result = if (rpc.isSuccess) rpc else {
-                kotlinx.coroutines.yield()
+                yield()
                 loginViaRest(server, schoolname, username, password)
             }
 
@@ -324,12 +324,12 @@ class WebUntisRepository @Inject constructor(
 
     // School-wide data (not per-student) — stays a single shared cache regardless of which
     // account is active.
-    private var cacheSchoolYear:   CacheEntry<List<com.webuntis.dashboard.model.SchoolYearInfo>>? = null
+    private var cacheSchoolYear:   CacheEntry<List<SchoolYearInfo>>? = null
     private var cacheMessages:     CacheEntry<List<Message>>?                             = null
     private var cacheSentMessages: CacheEntry<List<Message>>?                             = null
     private var cacheDraftMessages:CacheEntry<List<Message>>?                             = null
-    private var cacheTeachers:     List<com.webuntis.dashboard.model.RecipientPerson>?   = null
-    private var cacheTimegrid:     CacheEntry<List<com.webuntis.dashboard.model.TimegridRow>>? = null
+    private var cacheTeachers:     List<RecipientPerson>?   = null
+    private var cacheTimegrid:     CacheEntry<List<TimegridRow>>? = null
     // "Unterrichtsinhalte" tab: incrementally-grown cache of Lesson.teachingContent entries.
     // Unlike the other cache* fields this isn't a single CacheEntry, because the tab's window
     // size grows over time ("Weitere Tage laden") and each grow only needs to fetch+enrich the
@@ -564,7 +564,7 @@ class WebUntisRepository @Inject constructor(
                 val payload = it.split(".").getOrNull(1) ?: return@let null
                 val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
                 val json = String(android.util.Base64.decode(padded, android.util.Base64.URL_SAFE))
-                val obj = com.google.gson.JsonParser.parseString(json).asJsonObject
+                val obj = JsonParser.parseString(json).asJsonObject
                 obj.get("tenant_id")?.asString
                     ?: obj.get("tenantId")?.asString
                     ?: obj.get("tenantid")?.asString
@@ -682,7 +682,7 @@ class WebUntisRepository @Inject constructor(
         bearerToken = null
         val rpc = loginViaJsonRpc(server, schoolname, username, password)
         val result = if (rpc.isSuccess) rpc else {
-            kotlinx.coroutines.yield()
+            yield()
             loginViaRest(server, schoolname, username, password)
         }
         if (result.isSuccess) {
@@ -751,7 +751,7 @@ class WebUntisRepository @Inject constructor(
                 val resp = service().getAppData(token)
                 val raw  = rawBody(resp)
                 if (raw != null) {
-                    val json = com.google.gson.JsonParser.parseString(raw).asJsonObject
+                    val json = JsonParser.parseString(raw).asJsonObject
                     val userObj = json.getAsJsonObject("user")
                     val roles = userObj?.getAsJsonArray("roles")
                         ?.map { it.asString } ?: emptyList()
@@ -1459,7 +1459,7 @@ class WebUntisRepository @Inject constructor(
     suspend fun getCurrentSchoolYearName(): Result<String> =
         getCurrentSchoolYear().mapCatching { it.name }
 
-    private suspend fun getCurrentSchoolYear(): Result<com.webuntis.dashboard.model.SchoolYearInfo> =
+    private suspend fun getCurrentSchoolYear(): Result<SchoolYearInfo> =
         withCacheOrFetch(
             forceRefresh = false,
             cache = { cacheSchoolYear },
@@ -1469,13 +1469,13 @@ class WebUntisRepository @Inject constructor(
                 val token = getAuthHeader()
                 val resp = service().getSchoolYears(token)
                 val raw = rawBody(resp) ?: return@withCacheOrFetch Result.failure(Exception("Keine Schuldaten"))
-                val years: List<com.webuntis.dashboard.model.SchoolYearInfo> =
-                    parseJson(raw, object : com.google.gson.reflect.TypeToken<List<com.webuntis.dashboard.model.SchoolYearInfo>>() {})
+                val years: List<SchoolYearInfo> =
+                    parseJson(raw, object : TypeToken<List<SchoolYearInfo>>() {})
                 Result.success(years)
             } catch (e: Exception) { Result.failure(e) }
         }.mapCatching { years ->
             val today = LocalDate.now()
-            val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
             years.firstOrNull { year ->
                 val start = LocalDate.parse(year.dateRange.start, fmt)
                 val end   = LocalDate.parse(year.dateRange.end, fmt)
@@ -1506,8 +1506,8 @@ class WebUntisRepository @Inject constructor(
             val end: String
             if (schoolYear != null) {
                 // API returns "yyyy-MM-dd", service expects "yyyyMMdd"
-                val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
-                val outFmt = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")
+                val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+                val outFmt = DateTimeFormatter.ofPattern("yyyyMMdd")
                 start = LocalDate.parse(schoolYear.dateRange.start, fmt).format(outFmt)
                 end   = LocalDate.parse(schoolYear.dateRange.end, fmt).format(outFmt)
             } else {
@@ -1718,7 +1718,7 @@ class WebUntisRepository @Inject constructor(
             val today = LocalDate.now()
             // Use school year bounds to avoid MULTIPLE_SCHOOLYEARS_IN_RANGE error
             val schoolYear = getCurrentSchoolYear().getOrNull()
-            val syFmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            val syFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
             val syStart = schoolYear?.let { LocalDate.parse(it.dateRange.start, syFmt) }
                 ?: if (today.monthValue >= 8) today.withMonth(8).withDayOfMonth(1)
                    else today.withYear(today.year - 1).withMonth(8).withDayOfMonth(1)
@@ -1787,12 +1787,12 @@ class WebUntisRepository @Inject constructor(
      * Uses the current school year ID. Cached with normal TTL.
      */
     private fun timegridPersist() = Persist(diskKey("timegrid"),
-        object : TypeToken<List<com.webuntis.dashboard.model.TimegridRow>>() {}.type)
+        object : TypeToken<List<TimegridRow>>() {}.type)
 
-    suspend fun peekTimegrid(): List<com.webuntis.dashboard.model.TimegridRow>? =
+    suspend fun peekTimegrid(): List<TimegridRow>? =
         peekCached({ cacheTimegrid }, { cacheTimegrid = it }, timegridPersist())
 
-    suspend fun getTimegrid(forceRefresh: Boolean = false): Result<List<com.webuntis.dashboard.model.TimegridRow>> = withCacheOrFetch(
+    suspend fun getTimegrid(forceRefresh: Boolean = false): Result<List<TimegridRow>> = withCacheOrFetch(
         forceRefresh = forceRefresh,
         cache = { cacheTimegrid },
         store = { cacheTimegrid = it },
@@ -1804,7 +1804,7 @@ class WebUntisRepository @Inject constructor(
             val schoolYearId = schoolYear?.id ?: 0
             val resp = service().getTimegrid(token, schoolYearId)
             val raw = rawBody(resp) ?: return@withCacheOrFetch Result.success(emptyList())
-            val timegridResp: com.webuntis.dashboard.model.TimegridResponse = parseJson(raw)
+            val timegridResp: TimegridResponse = parseJson(raw)
             Result.success(timegridResp.data?.rows ?: emptyList())
         } catch (e: Exception) { Result.failure(e) }
     }
@@ -2053,7 +2053,7 @@ class WebUntisRepository @Inject constructor(
             val bearerResp = svc.getBearerToken()
             val bearerRaw = bearerResp.body()?.string()?.trim() ?: return null
             val token = if (bearerRaw.startsWith("{"))
-                com.google.gson.JsonParser.parseString(bearerRaw).asJsonObject.get("token")?.asString ?: bearerRaw
+                JsonParser.parseString(bearerRaw).asJsonObject.get("token")?.asString ?: bearerRaw
             else bearerRaw.trim('"')
             additionalBearerTokens[account.key] = token
             token
@@ -2303,14 +2303,14 @@ class WebUntisRepository @Inject constructor(
             else     -> return emptyList()
         }
         val raw = rawBody(resp) ?: return emptyList()
-        val jsonObj = com.google.gson.JsonParser.parseString(raw).asJsonObject
+        val jsonObj = JsonParser.parseString(raw).asJsonObject
         val arr = jsonObj.getAsJsonArray("sentMessages")
             ?: jsonObj.getAsJsonArray("draftMessages")
             ?: jsonObj.getAsJsonArray("outgoingMessages")
             ?: jsonObj.getAsJsonArray("incomingMessages")
             ?: return emptyList()
         val type = object : TypeToken<List<Message>>() {}.type
-        val msgs: List<Message> = com.google.gson.Gson().fromJson(arr, type)
+        val msgs: List<Message> = Gson().fromJson(arr, type)
         val storedIn = if (folder == "DRAFTS") "DRAFT" else "SENT"
         return msgs.map { it.copy(accountLabel = label.takeIf { l -> l.isNotBlank() }, storedIn = storedIn) }
     }
@@ -2360,7 +2360,7 @@ class WebUntisRepository @Inject constructor(
             // have one, so [replyToMsgId] is currently unused here. If replies turn out to not
             // thread correctly, that's the next thing to investigate (likely a different field
             // name in v2, or replies might just be plain new messages server-side).
-            val gson = com.google.gson.Gson()
+            val gson = Gson()
             val payload = buildString {
                 append("{")
                 append("\"subject\":${gson.toJson(subject)},")
@@ -2420,9 +2420,9 @@ class WebUntisRepository @Inject constructor(
                 getAuthHeader() ?: return Result.failure(Exception("Nicht authentifiziert"))
             }
 
-            val gson = com.google.gson.Gson()
+            val gson = Gson()
             val requestJson = gson.toJson(
-                com.webuntis.dashboard.model.SaveDraftRequest(
+                SaveDraftRequest(
                     subject = subject,
                     content = content,
                     hasAttachments = attachments.isNotEmpty() || removedAttachmentIds.isEmpty(),
@@ -2483,16 +2483,16 @@ class WebUntisRepository @Inject constructor(
 
     // ─── TEACHERS ─────────────────────────────────────────────────────────────
 
-    suspend fun getTeachers(forceRefresh: Boolean = false): Result<List<com.webuntis.dashboard.model.RecipientPerson>> {
+    suspend fun getTeachers(forceRefresh: Boolean = false): Result<List<RecipientPerson>> {
         cacheTeachers?.takeIf { !forceRefresh }?.let { return Result.success(it) }
         return try {
             val token = getAuthHeader() ?: return Result.failure(Exception("Nicht authentifiziert"))
             val resp  = service().getMessageRecipientsAuth(token)
             val raw   = rawBody(resp) ?: return Result.success(emptyList())
             // Response is a JSON array of { "type": "TEACHERS"|"CLASS_TEACHERS"|"OTHERS", "persons": [...] }
-            val groupType = object : TypeToken<List<com.webuntis.dashboard.model.RecipientGroup>>() {}.type
-            val groups: List<com.webuntis.dashboard.model.RecipientGroup> =
-                com.google.gson.Gson().fromJson(raw, groupType)
+            val groupType = object : TypeToken<List<RecipientGroup>>() {}.type
+            val groups: List<RecipientGroup> =
+                Gson().fromJson(raw, groupType)
             // Merge CLASS_TEACHERS first, then TEACHERS, deduplicate by userId
             val seenIds = mutableSetOf<Int>()
             val persons = (groups.filter { it.type == "CLASS_TEACHERS" } +

@@ -26,7 +26,6 @@ import com.webuntis.dashboard.model.Absence
 class AbsenceDecoration : RecyclerView.ItemDecoration() {
 
     var absences: List<Absence> = emptyList()
-        set(value) { field = value }
 
     private val overlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.argb(80, 80, 80, 80)

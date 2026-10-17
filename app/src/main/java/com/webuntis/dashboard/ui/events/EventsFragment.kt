@@ -42,7 +42,7 @@ class EventsFragment : Fragment() {
 
         binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true, userInitiated = true) }
         viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
             }
         }

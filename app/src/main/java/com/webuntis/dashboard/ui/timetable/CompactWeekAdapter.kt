@@ -60,7 +60,7 @@ class CompactWeekAdapter : ListAdapter<SchoolDay, CompactWeekAdapter.DayViewHold
             adapter.showShortRoomInParens    = shortRoomInParens
             adapter.onLessonClick    = onClick
             adapter.isPastDay        = isPastDay
-            adapter.currentTimeMin   = if (isToday) com.webuntis.dashboard.ui.timetable.TimeIndicatorView.currentTimeMinutes() else -1
+            adapter.currentTimeMin   = if (isToday) TimeIndicatorView.currentTimeMinutes() else -1
             b.rvLessons.adapter = adapter
             adapter.submitList(day.lessons)
         }

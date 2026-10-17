@@ -32,7 +32,7 @@ private class SanitizingLogger : HttpLoggingInterceptor.Logger {
         val safe = pattern.replace(message) { mr ->
             mr.groupValues[1] + "***"
         }
-        android.util.Log.i("okhttp.OkHttpClient", safe)
+        Log.i("okhttp.OkHttpClient", safe)
     }
 }
 

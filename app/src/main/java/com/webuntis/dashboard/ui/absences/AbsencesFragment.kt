@@ -64,7 +64,7 @@ class AbsencesFragment : Fragment() {
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.swipeRefresh.setOnRefreshListener { viewModel.load(forceRefresh = true, userInitiated = true) }
         viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
             }
         }
@@ -295,9 +295,9 @@ class AbsencesFragment : Fragment() {
                 // Horizontal scroll for the chips in this row
                 val hscroll = android.widget.HorizontalScrollView(context).apply {
                     isHorizontalScrollBarEnabled = false
-                    layoutParams = android.view.ViewGroup.LayoutParams(
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                     )
                 }
                 val row = com.google.android.material.chip.ChipGroup(context).apply {

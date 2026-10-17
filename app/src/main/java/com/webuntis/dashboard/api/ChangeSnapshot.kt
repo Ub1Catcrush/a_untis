@@ -58,12 +58,12 @@ data class ChangeSnapshot(
                 // property into a nullable-typed local is always legal in Kotlin and preserves
                 // whatever the value actually is at runtime, letting `?:` below catch the case
                 // where Gson left it null despite the static type promising otherwise.
-                val lessonStatus: Map<String, String>? = raw.lessonStatus
-                val messageIds: Set<Int>? = raw.messageIds
-                val homeworkIds: Set<Int>? = raw.homeworkIds
-                val classbookIds: Set<Int>? = raw.classbookIds
-                val notifiedAt: Map<String, Long>? = raw.notifiedAt
-                val recentChanges: List<ChangeLogEntry>? = raw.recentChanges
+                val lessonStatus: Map<String, String> = raw.lessonStatus
+                val messageIds: Set<Int> = raw.messageIds
+                val homeworkIds: Set<Int> = raw.homeworkIds
+                val classbookIds: Set<Int> = raw.classbookIds
+                val notifiedAt: Map<String, Long> = raw.notifiedAt
+                val recentChanges: List<ChangeLogEntry> = raw.recentChanges
                 raw.copy(
                     lessonStatus  = lessonStatus  ?: emptyMap(),
                     messageIds    = messageIds    ?: emptySet(),

@@ -45,7 +45,7 @@ class TimetableFragment : Fragment() {
 
         binding.swipeRefresh.setOnRefreshListener { viewModel.loadAll(forceRefresh = true, userInitiated = true) }
         viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
             }
         }

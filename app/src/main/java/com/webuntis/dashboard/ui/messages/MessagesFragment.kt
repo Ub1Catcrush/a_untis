@@ -89,7 +89,7 @@ class MessagesFragment : Fragment() {
         binding.recyclerView.adapter = adapter
         binding.swipeRefresh.setOnRefreshListener { viewModel.refresh(userInitiated = true) }
         viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.refreshing.collect { binding.swipeRefresh.isRefreshing = it }
             }
         }
@@ -388,7 +388,7 @@ class MessagesFragment : Fragment() {
         val dp = resources.displayMetrics.density
         val attachHeader = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity     = android.view.Gravity.CENTER_VERTICAL
+            gravity     = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = (12 * dp).toInt() }
@@ -629,9 +629,9 @@ class MessageAdapter(
 
             if (isExpanded) {
                 // When expanded, prefer full content body over preview
-                b.textPreview.text = expandedMsg?.content?.takeIf { it.isNotBlank() }
-                    ?: expandedMsg?.contentPreview ?: ""
-                renderExpanded(expandedMsg!!, msg)
+                b.textPreview.text = expandedMsg.content?.takeIf { it.isNotBlank() }
+                    ?: expandedMsg.contentPreview ?: ""
+                renderExpanded(expandedMsg, msg)
             }
 
             b.root.setOnClickListener {

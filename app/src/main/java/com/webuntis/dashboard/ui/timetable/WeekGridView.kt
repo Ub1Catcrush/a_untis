@@ -176,7 +176,7 @@ class WeekGridView @JvmOverloads constructor(
             )
             binding.weekDayColumns.addView(
                 column,
-                LinearLayout.LayoutParams(dayColWidthPx, LinearLayout.LayoutParams.WRAP_CONTENT)
+                LayoutParams(dayColWidthPx, LayoutParams.WRAP_CONTENT)
             )
         }
     }
@@ -277,12 +277,12 @@ class WeekGridView @JvmOverloads constructor(
             )
             setBackgroundResource(R.drawable.bg_compact_header)
         }
-        columnLayout.addView(header, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, headerHeightPx))
+        columnLayout.addView(header, LayoutParams(LayoutParams.MATCH_PARENT, headerHeightPx))
 
         val lessonsContainer = FrameLayout(context)
         columnLayout.addView(
             lessonsContainer,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, gridHeightPx).apply {
+            LayoutParams(LayoutParams.MATCH_PARENT, gridHeightPx).apply {
                 topMargin = (2 * density).roundToInt()
             }
         )
@@ -339,9 +339,9 @@ class WeekGridView @JvmOverloads constructor(
         b.textSubjectShort.textSize = shortSizeSp
 
         if (secondLineMode == com.webuntis.dashboard.api.SessionManager.WeekViewLine.NONE) {
-            b.textSubjectLong.visibility = View.GONE
+            b.textSubjectLong.visibility = GONE
         } else {
-            b.textSubjectLong.visibility = View.VISIBLE
+            b.textSubjectLong.visibility = VISIBLE
             b.textSubjectLong.text = secondLineText(lesson, secondLineMode)
             b.textSubjectLong.textSize = longSizeSp
         }

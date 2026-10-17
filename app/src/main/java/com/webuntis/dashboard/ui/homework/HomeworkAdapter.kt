@@ -71,8 +71,8 @@ class HomeworkAdapter(
                         isCloseIconVisible = false
                     }
                     chip.text = att.name ?: att.uploadedFileName ?: b.root.context.getString(
-                        com.webuntis.dashboard.R.string.label_attachment_fallback)
-                    chip.chipIcon = androidx.core.content.ContextCompat.getDrawable(
+                        R.string.label_attachment_fallback)
+                    chip.chipIcon = ContextCompat.getDrawable(
                         b.root.context, android.R.drawable.ic_menu_save)
                     chip.isChipIconVisible = true
                     chip.setOnClickListener { onAttachmentClick(hw, att) }
@@ -86,7 +86,7 @@ class HomeworkAdapter(
             val colorRes = subjectColorRes(item.subjectName)
             b.subjectChip.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(
-                    androidx.core.content.ContextCompat.getColor(b.root.context, colorRes)
+                    ContextCompat.getColor(b.root.context, colorRes)
                 )
 
             // Left accent stripe — real subject color from the API when known, else the

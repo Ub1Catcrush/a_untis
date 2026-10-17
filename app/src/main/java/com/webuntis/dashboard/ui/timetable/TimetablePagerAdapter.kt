@@ -181,7 +181,7 @@ class DayFragment : Fragment() {
         }
     }
 
-    private fun updateAbsenceOverlay(date: java.time.LocalDate) {
+    private fun updateAbsenceOverlay(date: LocalDate) {
         val dateInt = date.year * 10000 + date.monthValue * 100 + date.dayOfMonth
         val filtered = viewModel.absences.value.filter { abs ->
             val s = abs.startDate ?: return@filter false

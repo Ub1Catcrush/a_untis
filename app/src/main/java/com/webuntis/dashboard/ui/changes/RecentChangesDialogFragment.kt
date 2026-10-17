@@ -100,7 +100,7 @@ class RecentChangesDialogFragment : DialogFragment() {
         private val expandedPositions = items.indices
             .filterTo(mutableSetOf()) { items[it].timestampMs > previouslyViewedAt }
 
-        inner class ViewHolder(val binding: ItemRecentChangeBinding) : RecyclerView.ViewHolder(binding.root)
+        class ViewHolder(val binding: ItemRecentChangeBinding) : RecyclerView.ViewHolder(binding.root)
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             val binding = ItemRecentChangeBinding.inflate(

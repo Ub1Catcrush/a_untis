@@ -824,9 +824,9 @@ data class Message(
     val storedIn: String? = null,
     /** Recipients for sent/draft messages */
     val recipientPersons: List<MessageRecipient>? = null,
-    @com.google.gson.annotations.SerializedName("_accountLabel")
+    @SerializedName("_accountLabel")
     val accountLabel: String? = null,
-    @com.google.gson.annotations.SerializedName("_attachments")
+    @SerializedName("_attachments")
     val attachmentList: List<Attachment>? = null,
     val replyHistory: List<ReplyMessage>? = null,  // populated by getMessageWithAttachments
     /** Draft-specific: attachments stored on the server (from GET /messages/drafts/{id}) */
@@ -913,8 +913,8 @@ data class Teacher(
 ) {
     val displayName: String get() = when {
         !longName.isNullOrBlank() && !name.isNullOrBlank() -> "$longName ($name)"
-        !longName.isNullOrBlank() -> longName!!
-        !name.isNullOrBlank()     -> name!!
+        !longName.isNullOrBlank() -> longName
+        !name.isNullOrBlank()     -> name
         else -> "Unbekannt"
     }
 }
@@ -1016,8 +1016,7 @@ private fun untisIntToLocalDateForAbsence(v: Int): java.time.LocalDate {
  *  gap to still count as consecutive, since Saturday/Sunday were never going to have a lesson
  *  to be absent from in the first place. */
 private fun isNextSchoolDay(prevEnd: Int?, next: Int?): Boolean {
-    if (prevEnd == null || next == null) return false
-    return try {
+    return !(prevEnd == null || next == null) && try {
         var d = untisIntToLocalDateForAbsence(prevEnd).plusDays(1)
         while (d.dayOfWeek == java.time.DayOfWeek.SATURDAY || d.dayOfWeek == java.time.DayOfWeek.SUNDAY) {
             d = d.plusDays(1)
