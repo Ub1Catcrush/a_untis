@@ -68,11 +68,15 @@ jobs:
         if: steps.check_tag.outputs.exists != 'true'
         run: echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > my-release-key.jks
 
-      # Align APKs
+      # KORREKTUR FÜR SDK 37: Dynamisches Ermitteln der Build-Tools
       - name: Align APKs
         if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
+          
+          # Findet den neuesten Build-Tools Ordner (z.B. 37.0.0 oder die aktuellste installierte Version)
+          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          echo "Using build-tools from: $BUILD_TOOLS_PATH"
           
           # Sucht nach allen Release-APKs im Ausgabeordner
           files=(app/build/outputs/apk/release/*.apk)
@@ -83,33 +87,38 @@ jobs:
             # Überspringe Dateien, die bereits "-signed" oder "-aligned" im Namen tragen
             [[ "$f" == *"-signed.apk" ]] && continue
             [[ "$f" == *"-aligned.apk" ]] && continue
-            
+          
             # Bestimme den neuen Dateinamen (ersetzt -unsigned falls vorhanden, ansonsten hängt es -signed an)
             if [[ "$f" == *"-unsigned.apk" ]]; then
               target="${f/-unsigned.apk/-signed.apk}"
             else
               target="${f/.apk/-signed.apk}"
             fi
-            
+          
             echo "Aligning $f -> $target"
-            $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 "$f" "$target"
+            $BUILD_TOOLS_PATH/zipalign -v 4 "$f" "$target"
           done
 
+      # KORREKTUR FÜR SDK 37: Dynamisches Ermitteln der Build-Tools
       - name: Align AAB
         if: steps.check_tag.outputs.exists != 'true'
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 \
+          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          $BUILD_TOOLS_PATH/zipalign -v 4 \
             app/build/outputs/bundle/release/app-release.aab \
             app/build/outputs/bundle/release/app-release-signed.aab
 
+      # KORREKTUR FÜR SDK 37: Dynamisches Ermitteln der Build-Tools
       - name: Sign APKs with apksigner
         if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
+          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          
           # Findet app-release-signed.apk sowie app-arm64-v8a-release-signed.apk
           for f in app/build/outputs/apk/release/app*-release-signed.apk; do
             echo "Signing: $f"
-            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            $BUILD_TOOLS_PATH/apksigner sign \
               --ks my-release-key.jks \
               --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
               --key-pass pass:${{ secrets.KEY_PASSWORD }} \
@@ -131,13 +140,16 @@ jobs:
             app/build/outputs/bundle/release/app-release-signed.aab \
             "${{ secrets.KEY_ALIAS }}"
 
+      # KORREKTUR FÜR SDK 37: Dynamisches Ermitteln der Build-Tools
       - name: Verify aligned APK signatures
         if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
+          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          
           for f in app/build/outputs/apk/release/app*-release-signed.apk; do
             echo "== Verifying $f"
-            $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs "$f"
+            $BUILD_TOOLS_PATH/apksigner verify --verbose --print-certs "$f"
           done
 
       # KORREKTUR: If-Guard hinzugefügt
@@ -159,11 +171,11 @@ jobs:
 
           rename_apks() {
             local dir="$1" suffix="$2" base="$3" count=0
-            
+          
             for f in "$dir"/app*-$suffix.apk; do
               local filename
               filename=$(basename "$f")
-              
+          
               # Prüfen, ob es sich um die universelle/Standard-APK handelt
               if [[ "$filename" == "app-$suffix.apk" || "$filename" == "app-universal-$suffix.apk" ]]; then
                 cp "$f" "dist/${base}.apk"
