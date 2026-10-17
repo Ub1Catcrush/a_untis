@@ -159,12 +159,18 @@ jobs:
 
           rename_apks() {
             local dir="$1" suffix="$2" base="$3" count=0
-            for f in "$dir"/app-*-"$suffix".apk; do
-              local abi
-              abi=$(basename "$f"); abi=${abi#app-}; abi=${abi%-"$suffix".apk}
-              if [ "$abi" = "universal" ]; then
+            
+            for f in "$dir"/app*-$suffix.apk; do
+              local filename
+              filename=$(basename "$f")
+              
+              # Prüfen, ob es sich um die universelle/Standard-APK handelt
+              if [[ "$filename" == "app-$suffix.apk" || "$filename" == "app-universal-$suffix.apk" ]]; then
                 cp "$f" "dist/${base}.apk"
               else
+                # Extrahiert das ABI (z.B. arm64-v8a) aus "app-arm64-v8a-release-signed.apk"
+                local abi="${filename#app-}"
+                abi="${abi%-$suffix.apk}"
                 cp "$f" "dist/${base}_${abi}.apk"
               fi
               count=$((count + 1))
@@ -172,10 +178,15 @@ jobs:
             [ "$count" -gt 0 ] || { echo "No APKs found in $dir for $suffix"; exit 1; }
           }
 
+          # Ruft die Funktion mit den gelockerten Namensstrukturen auf
           rename_apks app/build/outputs/apk/release release-signed a_untis_release_signed
           rename_apks app/build/outputs/apk/debug   debug          a_untis_debug
 
-          cp dist/a_untis_release_signed.apk dist/app-release-signed.apk
+          # Fallback-Kopie für den Legacy-Namen (falls noch benötigt)
+          if [ -f dist/a_untis_release_signed.apk ]; then
+            cp dist/a_untis_release_signed.apk dist/app-release-signed.apk
+          fi
+          
           cp app/build/outputs/bundle/release/app-release-signed.aab dist/a_untis_release_signed.aab
           cp app/build/outputs/bundle/debug/app-debug.aab            dist/a_untis_debug.aab
 
