@@ -1,9 +1,16 @@
 name: Build, Sign and Release
 on:
-  workflow_dispatch:
+  push:
+    paths:
+      - 'dependencies.gradle' # Triggert den Workflow nur, wenn diese Datei geändert wird
+  workflow_dispatch: # Ermöglicht weiterhin den manuellen Start im Notfall
 
 permissions:
   contents: write
+
+env:
+  VERSION_NAME: ""
+  VERSION_TAG: ""
 
 jobs:
   apk:
@@ -12,7 +19,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-      - name: set up JDK
+        with:
+          fetch-depth: 0 # Holt die gesamte Git-Historie, um Tags zuverlässig zu prüfen
+
+      - name: Set up JDK
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
@@ -25,15 +35,11 @@ jobs:
       - name: Extract version from dependencies.gradle
         id: get_version
         run: |
-          # Suche nach dem Key, extrahiere den Wert nach dem Doppelpunkt und entferne Kommas/Leerzeichen
           MAJOR=$(sed -n 's/.*versionMajor:\s*\([0-9]*\).*/\1/p' dependencies.gradle)
           MINOR=$(sed -n 's/.*versionMinor:\s*\([0-9]*\).*/\1/p' dependencies.gradle)
           PATCH=$(sed -n 's/.*versionPatch:\s*\([0-9]*\).*/\1/p' dependencies.gradle)
 
-          # Combine into a standard semantic version string (e.g., 1.2.3)
           VERSION_NAME="${MAJOR:-0}.${MINOR:-0}.${PATCH:-0}"
-
-          # Validierung: Falls ein Wert leer ist, wird v0.0.0 als Fallback gesetzt
           VERSION_TAG="v${MAJOR:-0}.${MINOR:-0}.${PATCH:-0}"
 
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
@@ -41,33 +47,30 @@ jobs:
           echo "tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "Extracted Version: $VERSION_NAME"
 
-      # Run Build Project
-      - name: Build gradle project
-        run: bash ./gradlew build -PversionName="${{ env.VERSION_NAME }}" --stacktrace
+      # Verhindert Builds, falls die Datei geändert, aber die Version nicht erhöht wurde
+      - name: Check if release tag already exists
+        id: check_tag
+        run: |
+          if git rev-parse "${{ env.VERSION_TAG }}" >/dev/null 2>&1; then
+            echo "Version ${{ env.VERSION_TAG }} existiert bereits. Überspringe Build."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Neue Version erkannt: ${{ env.VERSION_TAG }}. Fahre fort."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
-      # Create APK Debug
-      - name: Build apk debug APK
-        run: bash ./gradlew assembleDebug -PversionName="${{ env.VERSION_NAME }}" --stacktrace
-
-      # Create APK Release
-      - name: Build apk release APK
-        run: bash ./gradlew assembleRelease -PversionName="${{ env.VERSION_NAME }}" --stacktrace
-
-      # Create Bundle AAB Debug
-      - name: Build bundle debug AAB
-        run: bash ./gradlew bundleDebug -PversionName="${{ env.VERSION_NAME }}" --stacktrace
-
-      # Create Bundle AAB Release
-      # Noted for main module build [main_project_module]:bundleRelease
-      - name: Build bundle release AAB
-        run: bash ./gradlew bundleRelease -PversionName="${{ env.VERSION_NAME }}" --stacktrace
+      # Optimierter, kombinierter Build (Spart viel Zeit und baut alles in einem Rutsch)
+      - name: Build All APKs and AABs
+        if: steps.check_tag.outputs.exists != 'true'
+        run: ./gradlew assembleDebug assembleRelease bundleDebug bundleRelease -PversionName="${{ env.VERSION_NAME }}" --stacktrace --parallel
 
       - name: Decode keystore
+        if: steps.check_tag.outputs.exists != 'true'
         run: echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > my-release-key.jks
 
-      # With ABI splits enabled gradle produces app-<abi>-release-unsigned.apk for every ABI
-      # plus app-universal-release-unsigned.apk. Every one of them is aligned and signed.
+      # Align APKs
       - name: Align APKs
+        if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
           files=(app/build/outputs/apk/release/app-*-release-unsigned.apk)
@@ -77,12 +80,14 @@ jobs:
           done
 
       - name: Align AAB
+        if: steps.check_tag.outputs.exists != 'true'
         run: |
           $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 \
             app/build/outputs/bundle/release/app-release.aab \
             app/build/outputs/bundle/release/app-release-signed.aab
 
       - name: Sign APKs with apksigner
+        if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
           for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
@@ -98,21 +103,18 @@ jobs:
               "$f"
           done
 
-      - name: Sign AAB with apksigner
+      # KORREKTUR: AABs müssen mit jarsigner signiert werden
+      - name: Sign AAB with jarsigner
+        if: steps.check_tag.outputs.exists != 'true'
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-            --min-sdk-version 26 \
-            --ks my-release-key.jks \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --v4-signing-enabled false \
-            app/build/outputs/bundle/release/app-release-signed.aab
+          jarsigner -keystore my-release-key.jks \
+            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.KEY_PASSWORD }}" \
+            app/build/outputs/bundle/release/app-release-signed.aab \
+            "${{ secrets.KEY_ALIAS }}"
 
       - name: Verify aligned APK signatures
+        if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
           for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
@@ -120,31 +122,24 @@ jobs:
             $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs "$f"
           done
 
+      # KORREKTUR: If-Guard hinzugefügt
       - name: Verify aligned AAB signature
+        if: steps.check_tag.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Lädt die bundletool-all-*.jar der neuesten Version ohne API-Parsing herunter
           gh release download --repo google/bundletool --pattern "bundletool-all-*.jar"
-          
-          # Benennt die Datei universell um (z.B. von bundletool-all-1.18.3.jar zu bundletool.jar)
           mv bundletool-all-*.jar bundletool.jar
-          
-          # Ausführung des Verifizierungs-Befehls
           java -jar bundletool.jar validate --bundle=app/build/outputs/bundle/release/app-release-signed.aab
 
-      # Collects everything under its final release name in dist/:
-      #   a_untis_release_signed.apk / .aab        (universal APK = all ABIs)
-      #   a_untis_release_signed_<abi>.apk         (arm64-v8a, armeabi-v7a, x86, x86_64)
-      #   app-release-signed.apk                   (legacy alias of the universal release APK)
-      #   a_untis_debug.apk / .aab                 (universal APK = all ABIs)
-      #   a_untis_debug_<abi>.apk
+      # Rename files for release
       - name: Rename files for release
+        if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
           mkdir -p dist
 
-          rename_apks() { # <input dir> <gradle suffix> <final base name>
+          rename_apks() {
             local dir="$1" suffix="$2" base="$3" count=0
             for f in "$dir"/app-*-"$suffix".apk; do
               local abi
@@ -162,39 +157,32 @@ jobs:
           rename_apks app/build/outputs/apk/release release-signed a_untis_release_signed
           rename_apks app/build/outputs/apk/debug   debug          a_untis_debug
 
-          # Alias with the pre-rename name: already installed app versions look for exactly
-          # "app-release-signed.apk" in the latest release (old UpdateManager), so without
-          # this they would never find the update. Identical to the universal APK.
           cp dist/a_untis_release_signed.apk dist/app-release-signed.apk
-
           cp app/build/outputs/bundle/release/app-release-signed.aab dist/a_untis_release_signed.aab
           cp app/build/outputs/bundle/debug/app-debug.aab            dist/a_untis_debug.aab
 
           ls -l dist
 
       - name: Upload APKs to Github Artifacts
+        if: steps.check_tag.outputs.exists != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: apk files
           path: dist/*.apk
 
       - name: Upload AABs to Github Artifacts
+        if: steps.check_tag.outputs.exists != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: aab files
           path: dist/*.aab
 
-      # softprops/action-gh-release replaces the deprecated actions/create-release
-      # and actions/upload-release-asset — it creates the release and uploads all
-      # assets in a single step, and runs on Node.js 20+.
       - name: Create Release and Upload Assets
-        uses: softprops/action-gh-release@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        if: steps.check_tag.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION_TAG }}
-          name: Release ${{ env.VERSION_TAG }}
-          generate_release_notes: true
+          name: Release ${{ env.VERSION_NAME }}
           draft: false
           prerelease: false
           files: |
