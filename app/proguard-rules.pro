@@ -80,3 +80,15 @@
     public static int d(...);
     public static int i(...);
 }
+
+# ── WorkManager / Room ────────────────────────────────────────────────────────
+# WorkManager's WorkDatabase is a Room database; Room instantiates the generated
+# WorkDatabase_Impl via reflection (getDeclaredConstructor()). R8 in AGP 9 strips that no-arg
+# constructor, so WebUntisApp.onCreate crashed on start with
+#   NoSuchMethodException: androidx.work.impl.WorkDatabase_Impl.<init> []
+# Rules are name-based on purpose: Room is only a runtime dependency of WorkManager, so
+# androidx.room.* classes are not resolvable from this module's rules.
+-keep class androidx.work.impl.WorkDatabase_Impl { <init>(); }
+-keep class androidx.work.impl.**_Impl { <init>(); }
+-keep class androidx.work.impl.WorkDatabase { *; }
+-dontwarn androidx.room.**
