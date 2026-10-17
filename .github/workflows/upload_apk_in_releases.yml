@@ -73,10 +73,26 @@ jobs:
         if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
-          files=(app/build/outputs/apk/release/app-*-release-unsigned.apk)
-          [ ${#files[@]} -gt 0 ] || { echo "No unsigned release APKs found"; exit 1; }
+          
+          # Sucht nach allen Release-APKs im Ausgabeordner
+          files=(app/build/outputs/apk/release/*.apk)
+          
+          [ ${#files[@]} -gt 0 ] || { echo "No release APKs found at all"; exit 1; }
+          
           for f in "${files[@]}"; do
-            $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 "$f" "${f/-unsigned.apk/-signed.apk}"
+            # Überspringe Dateien, die bereits "-signed" oder "-aligned" im Namen tragen
+            [[ "$f" == *"-signed.apk" ]] && continue
+            [[ "$f" == *"-aligned.apk" ]] && continue
+            
+            # Bestimme den neuen Dateinamen (ersetzt -unsigned falls vorhanden, ansonsten hängt es -signed an)
+            if [[ "$f" == *"-unsigned.apk" ]]; then
+              target="${f/-unsigned.apk/-signed.apk}"
+            else
+              target="${f/.apk/-signed.apk}"
+            fi
+            
+            echo "Aligning $f -> $target"
+            $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 "$f" "$target"
           done
 
       - name: Align AAB
@@ -90,7 +106,9 @@ jobs:
         if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
-          for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
+          # Findet app-release-signed.apk sowie app-arm64-v8a-release-signed.apk
+          for f in app/build/outputs/apk/release/app*-release-signed.apk; do
+            echo "Signing: $f"
             $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
               --ks my-release-key.jks \
               --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
@@ -117,8 +135,8 @@ jobs:
         if: steps.check_tag.outputs.exists != 'true'
         run: |
           shopt -s nullglob
-          for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
-            echo "== $f"
+          for f in app/build/outputs/apk/release/app*-release-signed.apk; do
+            echo "== Verifying $f"
             $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs "$f"
           done
 
