@@ -2,12 +2,13 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 apply(from = rootProject.file("dependencies.gradle"))
 
+// Plain local value: the `val x by extra(...)` delegate is deprecated since Gradle 9.6, and this is
+// only used inside this file (the data itself lives in dependencies.gradle).
 @Suppress("UNCHECKED_CAST")
-val appVersions by extra(rootProject.extra["app_versions"] as Map<String, Any>)
+val appVersions = rootProject.extra["app_versions"] as Map<String, Any>
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.navigation.safeargs)
@@ -18,12 +19,12 @@ val isFdroidBuild = project.hasProperty("fdroid")
 
 android {
     namespace = "com.webuntis.dashboard"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.webuntis.dashboard"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
 
         val major = (appVersions["versionMajor"] as Number).toInt()
         val minor = (appVersions["versionMinor"] as Number).toInt()
@@ -90,7 +91,7 @@ android {
     }
 }
 
-// Separate Konfiguration für Kotlin
+// Kotlin is built into AGP 9 (no kotlin-android plugin); the kotlin {} extension is provided by AGP.
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)

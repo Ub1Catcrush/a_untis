@@ -74,3 +74,10 @@ Native Android application (Kotlin) for student/parent WebUntis dashboards.
 - `LoginFragment` uses the ACTIVITY-scoped `LoginViewModel` (one shared instance, one auto-login).
 - Silent re-auth (`reAuthSilently`) clears the in-memory caches only; the disk cache is kept (it is per server+user and is what the next start paints first). `clearAllDataCaches()` (memory + disk) remains for logout / write operations / explicit cache clearing.
 - Every tab's ViewModel follows stale-while-revalidate: `peek*` (memory, then disk, ignoring age) -> state Success at once, then `get*` refreshes silently; a failed refresh never replaces content already shown; Loading/Error only when nothing is cached.
+
+## Toolchain: compileSdk/targetSdk 37 (Android 17)
+- API 37 needs AGP >= 9.1; the project is on AGP 9.2.1 (needs Gradle >= 9.4.1 = the current wrapper, build-tools >= 36.0.0, JDK 17+; the daemon JVM is 21). Newer AGPs (9.3: Gradle 9.5, 9.4: Gradle 9.6) are optional upgrades that also need a newer wrapper.
+- AGP 9 has BUILT-IN KOTLIN (KGP 2.2.10): there is NO `org.jetbrains.kotlin.android` plugin / `kotlin` version in the catalog any more — re-adding it breaks the build. The `kotlin { compilerOptions { ... } }` block in app/build.gradle.kts is still valid.
+- Matching versions (libs.versions.toml): KSP 2.3.6 (>= 2.3.6 required for AGP 9, no longer tied to the Kotlin version), Hilt 2.59.2 (first Hilt Gradle plugin that supports AGP 9, and it requires it), Navigation/Safe Args 2.9.7 (Safe Args supports built-in Kotlin since 2.9.5).
+- CI (`upload_apk_in_releases.yml`): explicitly installs `platforms;android-37.0` + `build-tools;36.0.0` via sdkmanager and uses that build-tools version for zipalign/apksigner (job env `BUILD_TOOLS_VERSION`). Bump both together with compileSdk.
+- targetSdk 37 behaviour changes checked against this app: no orientation/resizability locks in the manifest, no local-network access, no reflection on static final fields; certificate transparency is now enforced by default for TLS (public WebUntis/GitHub certs are fine, private/self-signed servers would not be).

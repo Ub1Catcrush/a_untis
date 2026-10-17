@@ -1,17 +1,21 @@
 [versions]
-agp = "8.9.2"
-kotlin = "2.1.20"
-ksp = "2.1.20-1.0.31"
+# AGP 9.1+ is the minimum for compileSdk 37; 9.2 needs Gradle 9.4.1+ (see gradle-wrapper.properties).
+# Kotlin comes built into AGP 9 (KGP 2.2.10) — there is deliberately no separate Kotlin plugin/version here.
+agp = "9.2.1"
+# KSP is no longer tied to the Kotlin version since 2.3.0; AGP 9 needs >= 2.3.6 (built-in Kotlin support).
+ksp = "2.3.6"
 coreKtx = "1.16.0"
 appcompat = "1.7.0"
 material = "1.12.0"
 constraintlayout = "2.2.1"
 lifecycle = "2.9.0"
-navigation = "2.9.0"
+# Safe Args handles AGP 9 built-in Kotlin since 2.9.5
+navigation = "2.9.7"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 gson = "2.11.0"
-hilt = "2.55"
+# Hilt Gradle plugin supports AGP 9 from 2.59 (and needs AGP 9 from then on); 2.59.2 fixes slow incremental builds
+hilt = "2.59.2"
 coroutines = "1.9.0"
 datastore = "1.1.4"
 securityCrypto = "1.1.0-alpha06"
@@ -52,7 +56,6 @@ hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 navigation-safeargs = { id = "androidx.navigation.safeargs.kotlin", version.ref = "navigation" }

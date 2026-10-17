@@ -28,7 +28,7 @@ enum class NotificationCategory { CANCELLATIONS, SUBSTITUTIONS, ROOM_CHANGES, ME
  */
 @Singleton
 class NotificationHelper @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     companion object {
         const val CHANNEL_CANCELLATIONS = "channel_timetable_cancellations"
@@ -105,8 +105,7 @@ class NotificationHelper @Inject constructor(
     /** True once the user has actually granted the runtime permission (or it's not needed
      *  pre-Android 13) — callers should skip posting rather than crash if this is false. */
     private fun hasPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
-        return ActivityCompat.checkSelfPermission(
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || ActivityCompat.checkSelfPermission(
             context, android.Manifest.permission.POST_NOTIFICATIONS
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }

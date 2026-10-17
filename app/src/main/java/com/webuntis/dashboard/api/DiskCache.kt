@@ -34,7 +34,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class DiskCache @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val tag = "DiskCache"
 

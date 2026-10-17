@@ -25,7 +25,7 @@ import javax.inject.Singleton
 
 @Singleton
 class UpdateManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val githubService: GithubService
 ) {
     private val tag = "UpdateManager"
@@ -49,7 +49,7 @@ class UpdateManager @Inject constructor(
                 // Release assets are named a_untis_release_signed[_<abi>].apk (see the GitHub
                 // workflow): prefer the APK for this device's own architecture, then the
                 // universal one, then the legacy name (releases still ship it as an alias for old app versions).
-                val apkAsset = android.os.Build.SUPPORTED_ABIS
+                val apkAsset = Build.SUPPORTED_ABIS
                     .firstNotNullOfOrNull { abi ->
                         release.assets.firstOrNull { it.name == "a_untis_release_signed_$abi.apk" }
                     }

@@ -81,7 +81,7 @@ class SettingsFragment : Fragment() {
             val json = requireContext().contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
                 ?: return@registerForActivityResult
             when (val result = loginViewModel.sessionManager.importSettings(json)) {
-                is com.webuntis.dashboard.api.SessionManager.ImportResult.Success -> {
+                is SessionManager.ImportResult.Success -> {
                     android.widget.Toast.makeText(requireContext(), getString(R.string.settings_import_ok), android.widget.Toast.LENGTH_LONG).show()
                     val session = loginViewModel.sessionManager.session
                     val creds   = loginViewModel.sessionManager.storedCredentials
@@ -93,7 +93,7 @@ class SettingsFragment : Fragment() {
                     buildNameStyleSettings()
                     if (result.secondUpdated) renderAdditionalAccountsList()
                 }
-                is com.webuntis.dashboard.api.SessionManager.ImportResult.Error ->
+                is SessionManager.ImportResult.Error ->
                     android.widget.Toast.makeText(requireContext(), result.message, android.widget.Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
@@ -146,6 +146,38 @@ class SettingsFragment : Fragment() {
             }
         )
 
+        // ── Background change-check notifications ───────────────────────────────
+        binding.switchNotificationsEnabled.isChecked = loginViewModel.sessionManager.notificationsEnabled
+        binding.switchNotificationsEnabled.setOnCheckedChangeListener { _, checked ->
+            if (!checked) {
+                loginViewModel.sessionManager.notificationsEnabled = false
+                com.webuntis.dashboard.api.NotificationScheduler.stop(requireContext())
+                updateNotificationCategoriesEnabled()
+                return@setOnCheckedChangeListener
+            }
+            // Android 13+ requires the runtime POST_NOTIFICATIONS permission before any
+            // notification (including the ones PlanChangeCheckWorker posts) can show at all.
+            val needsPermission = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    requireContext(), android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (needsPermission) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                // Launcher's callback flips this back on success/off on denial — don't
+                // flip sessionManager's flag until we actually know the outcome.
+            } else {
+                loginViewModel.sessionManager.notificationsEnabled = true
+                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext())
+                updateBatteryOptimizationUi()
+                updateNotificationCategoriesEnabled()
+            }
+        }
+        // Per-category switches (own Android channel each) + shortcut to the system's channel settings.
+        bindNotificationCategories()
+        binding.btnNotificationChannels.setOnClickListener { openSystemNotificationSettings() }
+        updateBatteryOptimizationUi()
+        binding.btnBatteryOptimization.setOnClickListener { requestIgnoreBatteryOptimizations() }
+        binding.btnAutostart.setOnClickListener { requestAutostartPermission() }
         binding.btnCheckNow.setOnClickListener { runCheckNow() }
         binding.btnShowChanges.setOnClickListener { findNavController().navigate(R.id.recentChangesDialogFragment) }
 
@@ -466,7 +498,7 @@ class SettingsFragment : Fragment() {
                 textSize = 15f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 minHeight = dp(44)
-                gravity = android.view.Gravity.CENTER_VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
@@ -552,7 +584,7 @@ class SettingsFragment : Fragment() {
         container.removeAllViews()
         val accounts = loginViewModel.additionalAccounts
         if (accounts.isEmpty()) {
-            val empty = android.widget.TextView(requireContext()).apply {
+            val empty = TextView(requireContext()).apply {
                 text = getString(R.string.settings_second_no_accounts)
                 setTextColor(androidx.core.content.ContextCompat.getColor(requireContext(), android.R.color.darker_gray))
                 textSize = 13f
@@ -562,9 +594,9 @@ class SettingsFragment : Fragment() {
             return
         }
         accounts.forEach { account ->
-            val row = android.widget.LinearLayout(requireContext()).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, 0, 0, 12)
             }
             val info = buildString {
@@ -573,10 +605,10 @@ class SettingsFragment : Fragment() {
                     append(" (").append(account.label).append(")")
                 }
             }
-            val label = android.widget.TextView(requireContext()).apply {
+            val label = TextView(requireContext()).apply {
                 text = info
                 textSize = 14f
-                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             val removeBtn = com.google.android.material.button.MaterialButton(
                 requireContext(), null, com.google.android.material.R.attr.borderlessButtonStyle

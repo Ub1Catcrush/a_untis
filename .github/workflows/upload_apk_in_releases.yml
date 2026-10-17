@@ -1,4 +1,4 @@
-name: Build, Sign and Release
+name: Build, Sign and Upload APK in Releases
 on:
   workflow_dispatch:
 
@@ -10,6 +10,12 @@ jobs:
     name: Upload APK in Releases
     runs-on: ubuntu-latest
 
+    env:
+      # compileSdk/targetSdk 37 needs the android-37.0 platform; AGP 9.2 needs build-tools >= 36.0.0.
+      # The same build-tools provide the zipalign/apksigner used for signing below.
+      ANDROID_PLATFORM: 'android-37.0'
+      BUILD_TOOLS_VERSION: '36.0.0'
+
     steps:
       - uses: actions/checkout@v6
       - name: set up JDK
@@ -17,6 +23,15 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
+
+      # Make sure the exact SDK pieces exist instead of relying on what the runner image happens
+      # to ship (images lag behind new API levels) or on AGP's silent auto-download.
+      - name: Install Android SDK platform and build-tools
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;${ANDROID_PLATFORM}" "build-tools;${BUILD_TOOLS_VERSION}"
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
       - name: Grant Permission to Execute
         run: chmod +x gradlew
@@ -65,7 +80,7 @@ jobs:
       - name: Decode keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > my-release-key.jks
 
-      # With ABI splits enabled gradle produces app-<abi>-release-unsigned.apk for every ABI
+      # With ABI splits enabled Gradle produces app-<abi>-release-unsigned.apk for every ABI
       # plus app-universal-release-unsigned.apk. Every one of them is aligned and signed.
       - name: Align APKs
         run: |
@@ -73,12 +88,12 @@ jobs:
           files=(app/build/outputs/apk/release/app-*-release-unsigned.apk)
           [ ${#files[@]} -gt 0 ] || { echo "No unsigned release APKs found"; exit 1; }
           for f in "${files[@]}"; do
-            $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 "$f" "${f/-unsigned.apk/-signed.apk}"
+            $ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/zipalign -v 4 "$f" "${f/-unsigned.apk/-signed.apk}"
           done
 
       - name: Align AAB
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 \
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/zipalign -v 4 \
             app/build/outputs/bundle/release/app-release.aab \
             app/build/outputs/bundle/release/app-release-signed.aab
 
@@ -86,7 +101,7 @@ jobs:
         run: |
           shopt -s nullglob
           for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
-            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            $ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner sign \
               --ks my-release-key.jks \
               --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
               --key-pass pass:${{ secrets.KEY_PASSWORD }} \
@@ -100,7 +115,7 @@ jobs:
 
       - name: Sign AAB with apksigner
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner sign \
             --min-sdk-version 26 \
             --ks my-release-key.jks \
             --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
@@ -117,18 +132,20 @@ jobs:
           shopt -s nullglob
           for f in app/build/outputs/apk/release/app-*-release-signed.apk; do
             echo "== $f"
-            $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs "$f"
+            $ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner verify --verbose --print-certs "$f"
           done
 
       - name: Verify aligned AAB signature
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          # Lädt die bundletool-all-*.jar der neuesten Version ohne API-Parsing herunter
-          gh release download --repo google/bundletool --pattern "bundletool-all-*.jar"
+          # Ermittelt die Browser-Download-URL der neuesten bundletool-all-*.jar
+          URL=$(curl -s https://api.github.com/repos/google/bundletool/releases/latest \
+            | jq -r '.assets[] | select(.name | test("bundletool-all-.*\\.jar")) | .browser_download_url')
+          curl -L "$URL" -o bundletool.jar
           
-          # Benennt die Datei universell um (z.B. von bundletool-all-1.18.3.jar zu bundletool.jar)
-          mv bundletool-all-*.jar bundletool.jar
+          # Lädt das bundletool-all-*.jar Asset des neuesten Releases direkt herunter
+          # gh release download --repo google/bundletool --pattern "bundletool-all-*.jar"
+          # Benennt die Datei um, da der Name die Versionsnummer enthält
+          # mv bundletool-all-*.jar bundletool.jar
           
           # Ausführung des Verifizierungs-Befehls
           java -jar bundletool.jar validate --bundle=app/build/outputs/bundle/release/app-release-signed.aab

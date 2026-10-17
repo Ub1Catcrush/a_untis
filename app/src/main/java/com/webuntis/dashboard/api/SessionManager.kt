@@ -15,7 +15,7 @@ import javax.inject.Singleton
 
 @Singleton
 class SessionManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     // ── Two SharedPreferences files ───────────────────────────────────────────
     //
@@ -572,8 +572,7 @@ class SessionManager @Inject constructor(
 
     fun isCacheFresh(lastFetchMs: Long): Boolean {
         val ttl = cacheTtlMinutes
-        if (ttl == 0 || lastFetchMs == 0L) return false
-        return (System.currentTimeMillis() - lastFetchMs) < ttl * 60_000L
+        return !(ttl == 0 || lastFetchMs == 0L) && (System.currentTimeMillis() - lastFetchMs) < ttl * 60_000L
     }
 
     // ── Export / Import ───────────────────────────────────────────────────────

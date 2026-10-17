@@ -19,7 +19,7 @@ Native Kotlin Android-App für WebUntis-Schüler und Eltern mit Stundenplan, Hau
 |---|---|
 | Android Studio | Ladybug+ |
 | JDK | 17+ |
-| Android SDK | API 26+ (minSdk) / API 36 (compileSdk / targetSdk) |
+| Android SDK | API 26+ (minSdk) / API 37 (compileSdk / targetSdk) |
 | Kotlin | 2.1.20 |
 | Gradle | 8.9+ |
 
@@ -130,7 +130,7 @@ app/
 
 ### Kompatibilität
 
-Optimiert für moderne Android-Versionen (Ziel-SDK 36). Enthält spezifische Fixes für das Cookie-Handling unter Android 15 (`Secure`-Flag Problem).
+Optimiert für moderne Android-Versionen (Ziel-SDK 37). Enthält spezifische Fixes für das Cookie-Handling unter Android 15 (`Secure`-Flag Problem).
 
 ### Build
 
@@ -155,7 +155,7 @@ Native Kotlin Android app for WebUntis students and parents with timetable, home
 |---|---|
 | Android Studio | Ladybug+ |
 | JDK | 17+ |
-| Android SDK | API 26+ (minSdk) / API 36 (compileSdk / targetSdk) |
+| Android SDK | API 26+ (minSdk) / API 37 (compileSdk / targetSdk) |
 | Kotlin | 2.1.20 |
 | Gradle | 8.9+ |
 
@@ -266,7 +266,7 @@ app/
 
 ### Compatibility
 
-Optimised for modern Android versions (target SDK 36). Includes specific fixes for cookie handling on Android 15 (`Secure` flag issue).
+Optimised for modern Android versions (target SDK 37). Includes specific fixes for cookie handling on Android 15 (`Secure` flag issue).
 
 ### Build
 
