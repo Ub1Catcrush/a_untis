@@ -88,7 +88,7 @@ class WebUntisApp : Application(), Configuration.Provider {
     }
 
     companion object {
-        private const val FOREGROUND_REFRESH_THRESHOLD_MS = 60_000L // 1 minute
+        private const val FOREGROUND_REFRESH_THRESHOLD_MS = 20_000L // 20 seconds
     }
 }
 

@@ -39,7 +39,7 @@ class ClassbookViewModel @Inject constructor(
     private var loadJob: Job? = null
 
     init {
-        load()
+        load(forceRefresh = true)
         viewModelScope.launch {
             repository.peekNameCatalog()?.let { _nameCatalog.value = it }
             _nameCatalog.value = repository.getNameCatalog()

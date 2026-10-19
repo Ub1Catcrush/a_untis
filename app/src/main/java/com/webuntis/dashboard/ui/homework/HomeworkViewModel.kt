@@ -57,7 +57,7 @@ class HomeworkViewModel @Inject constructor(
     private var loadJob: kotlinx.coroutines.Job? = null
 
     init {
-        load()
+        load(forceRefresh = true)
         viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { load(forceRefresh = true) } }
         viewModelScope.launch { activeAccountManager.current.drop(1).collect { load(forceRefresh = true, contextChanged = true) } }
     }

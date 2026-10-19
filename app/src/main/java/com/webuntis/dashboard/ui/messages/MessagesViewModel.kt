@@ -97,7 +97,7 @@ class MessagesViewModel @Inject constructor(
     val downloadState: StateFlow<DownloadState> = _downloadState
 
     init {
-        loadInbox()
+        loadInbox(forceRefresh = true)
         refreshUnreadCount()
         loadNameCatalog()
         // Refreshes only the currently active tab — matches what refresh() (pull-to-refresh)

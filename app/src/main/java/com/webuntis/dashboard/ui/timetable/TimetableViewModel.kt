@@ -221,7 +221,9 @@ class TimetableViewModel @Inject constructor(
     private var loadJob: kotlinx.coroutines.Job? = null
 
     init {
-        loadAll()
+        // Cache sofort anzeigen (peek in loadAll), Netz-Refresh IMMER still dahinter —
+        // nicht von der Cache-TTL ausbremsen lassen.
+        loadAll(forceRefresh = true)
         viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { loadAll(forceRefresh = true) } }
         // .drop(1): the StateFlow immediately replays its current value to a new collector,
         // which would otherwise trigger a redundant reload right after the loadAll() above.
@@ -261,6 +263,7 @@ class TimetableViewModel @Inject constructor(
                 result.fold(
                     onSuccess = { list -> _days.value = UiState.Success(list.map { SchoolDay(it) }) },
                     onFailure = {
+                        android.util.Log.w("TimetableVM", "Refresh failed (forceRefresh=$forceRefresh): ${it.message}")
                         // Keep showing the last known content if a background refresh fails.
                         if (_days.value !is UiState.Success) _days.value = UiState.Error(it.message ?: "Fehler beim Laden")
                     }

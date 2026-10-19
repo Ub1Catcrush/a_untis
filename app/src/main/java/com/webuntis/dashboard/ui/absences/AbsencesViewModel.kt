@@ -83,7 +83,7 @@ class AbsencesViewModel @Inject constructor(
                 }
             }
         }
-        load(forceRefresh = false)
+        load(forceRefresh = true)
         loadMeta()
         viewModelScope.launch {
             appForegroundEvents.onForegroundResume.collect { load(forceRefresh = true); loadMeta() }
