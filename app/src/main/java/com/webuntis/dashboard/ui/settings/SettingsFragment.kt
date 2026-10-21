@@ -47,9 +47,11 @@ class SettingsFragment : Fragment() {
     ) { granted ->
         if (granted) {
             loginViewModel.sessionManager.notificationsEnabled = true
-            com.webuntis.dashboard.api.NotificationScheduler.start(requireContext())
+            com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.fixedCheckTimesEnabled)
             updateBatteryOptimizationUi()
             updateNotificationCategoriesEnabled()
+            if (loginViewModel.sessionManager.fixedCheckTimesEnabled) requestExactAlarmPermission()
+            updateExactAlarmUi()
         } else {
             // Permission denied — leave the feature off and reflect that in the switch so
             // it doesn't silently claim to be enabled while no notification can ever show.
@@ -167,11 +169,28 @@ class SettingsFragment : Fragment() {
                 // flip sessionManager's flag until we actually know the outcome.
             } else {
                 loginViewModel.sessionManager.notificationsEnabled = true
-                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext())
+                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.fixedCheckTimesEnabled)
                 updateBatteryOptimizationUi()
                 updateNotificationCategoriesEnabled()
+                if (loginViewModel.sessionManager.fixedCheckTimesEnabled) requestExactAlarmPermission()
+                updateExactAlarmUi()
             }
         }
+        // Additional fixed-time checks (06:00 / 18:00)
+        binding.switchFixedCheckTimes.isChecked = loginViewModel.sessionManager.fixedCheckTimesEnabled
+        binding.switchFixedCheckTimes.setOnCheckedChangeListener { _, checked ->
+            loginViewModel.sessionManager.fixedCheckTimesEnabled = checked
+            if (loginViewModel.sessionManager.notificationsEnabled) {
+                if (checked) {
+                    com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext())
+                    requestExactAlarmPermission()
+                } else {
+                    com.webuntis.dashboard.api.NotificationScheduler.cancelFixedSlot(requireContext())
+                }
+            }
+            updateExactAlarmUi()
+        }
+        binding.textExactAlarmHint.setOnClickListener { requestExactAlarmPermission() }
         // Per-category switches (own Android channel each) + shortcut to the system's channel settings.
         bindNotificationCategories()
         binding.btnNotificationChannels.setOnClickListener { openSystemNotificationSettings() }
@@ -678,6 +697,24 @@ class SettingsFragment : Fragment() {
             }
     }
 
+    /** Opens the system screen to allow exact alarms (Android 12+), if not yet allowed. */
+    private fun requestExactAlarmPermission() {
+        val intent = com.webuntis.dashboard.api.NotificationScheduler.exactAlarmPermissionIntent(requireContext()) ?: return
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            // No such settings screen on this ROM — the inexact fallback alarm still works.
+        }
+    }
+
+    /** Shows a tappable hint while the fixed-time check lacks the exact-alarm permission. */
+    private fun updateExactAlarmUi() {
+        val sm = loginViewModel.sessionManager
+        val missing = sm.notificationsEnabled && sm.fixedCheckTimesEnabled &&
+            !com.webuntis.dashboard.api.NotificationScheduler.canScheduleExactAlarms(requireContext())
+        binding.textExactAlarmHint.isVisible = missing
+    }
+
     private fun updateBatteryOptimizationUi() {
         val enabled = loginViewModel.sessionManager.notificationsEnabled
         val exempted = isIgnoringBatteryOptimizations()
@@ -787,7 +824,14 @@ class SettingsFragment : Fragment() {
         // notification permission via the system dialog on some ROMs) so the hint disappears
         // as soon as it's no longer needed, without requiring the user to leave and re-open
         // this screen.
-        if (_binding != null) updateBatteryOptimizationUi()
+        if (_binding != null) {
+            updateBatteryOptimizationUi()
+            // Back from the system "alarms & reminders" screen: arm with the new permission state.
+            if (loginViewModel.sessionManager.notificationsEnabled && loginViewModel.sessionManager.fixedCheckTimesEnabled) {
+                com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext())
+            }
+            updateExactAlarmUi()
+        }
     }
 
     override fun onDestroyView() {

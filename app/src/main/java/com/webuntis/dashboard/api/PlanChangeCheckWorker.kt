@@ -45,7 +45,9 @@ class PlanChangeCheckWorker @AssistedInject constructor(
     private val gson = Gson()
     private val tag = "PlanChangeCheckWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = runCheck()
+
+    private suspend fun runCheck(): Result {
         if (!sessionManager.notificationsEnabled) {
             Log.i(tag, "Skipping: notifications disabled in settings")
             return Result.success()

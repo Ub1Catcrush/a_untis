@@ -41,6 +41,7 @@ class WebUntisRepository @Inject constructor(
         get() = _bearerToken.get()
         set(v) { _bearerToken.set(v) }
     private val loginMutex = Mutex()
+    private val bearerMutex = Mutex()
 
     /**
      * Resolves the logged-in person's own class element id via /timetable/filter's "preSelected".
@@ -98,7 +99,9 @@ class WebUntisRepository @Inject constructor(
      */
     private suspend fun getAuthHeader(): String? {
         val active = sessionManager.activeAccount ?: run {
-            val token = bearerToken ?: fetchBearerToken().getOrNull()
+            // Serialised: personal + class timetable are fetched in parallel; without the lock
+            // both race to fetch a token on a cold start and one of them can come back empty.
+            val token = bearerToken ?: bearerMutex.withLock { bearerToken ?: fetchBearerToken().getOrNull() }
             return token?.let { "Bearer $it" }
         }
         val fetchedAt = additionalBearerTokenFetchedAt[active.key]
@@ -854,7 +857,10 @@ class WebUntisRepository @Inject constructor(
 
     private suspend fun fetchLessonsInRange(
         startDate: String, endDate: String, anchorDate: LocalDate = LocalDate.now(),
-        maxEnrich: Int = 40, anchorRangeEnd: LocalDate = anchorDate
+        maxEnrich: Int = 40, anchorRangeEnd: LocalDate = anchorDate,
+        // true = a COMBINED result whose class-plan overlay could not be loaded is reported as a
+        // failure instead of a (silently unfiltered) success, so it never replaces good data.
+        strictOverlay: Boolean = false
     ): Result<List<Lesson>> {
         val session = sessionManager.session
             ?: return Result.failure(Exception("Nicht angemeldet"))
@@ -879,6 +885,13 @@ class WebUntisRepository @Inject constructor(
         val startIso = "${startDate.substring(0,4)}-${startDate.substring(4,6)}-${startDate.substring(6,8)}"
         val endIso   = "${endDate.substring(0,4)}-${endDate.substring(4,6)}-${endDate.substring(6,8)}"
 
+        // COMBINED requested but the class/student id isn't known right now (e.g. mid re-login):
+        // don't silently serve the unfiltered personal plan and cache it over good data.
+        if (strictOverlay && mode == SessionManager.TimetableViewMode.COMBINED &&
+            !(canShowClass && effectiveClassId != 0)) {
+            return Result.failure(Exception("Klassen-ID noch nicht verfügbar"))
+        }
+
         // COMBINED: personal plan + selected class-plan subjects filled into the gaps.
         // Falls back to plain PERSONAL if no class id is known or nothing is selected to overlay.
         if (mode == SessionManager.TimetableViewMode.COMBINED && canShowClass && effectiveClassId != 0) {
@@ -893,9 +906,21 @@ class WebUntisRepository @Inject constructor(
                     val personalResult = personalDeferred.await()
                     val personal = personalResult.getOrNull()
                         ?: return@coroutineScope Result.failure(personalResult.exceptionOrNull() ?: Exception("Unbekannter Fehler"))
-                    // The class-plan overlay is best-effort: if it fails, still show the personal plan.
-                    val classLessons = classDeferred.await().getOrDefault(emptyList())
-                    Result.success(buildCombinedLessons(personal, classLessons, sessionManager.combinedOverlayRule))
+                    val rule = sessionManager.combinedOverlayRule
+                    val needsOverlay = rule.showRest || rule.included.isNotEmpty()
+                    var classResult = classDeferred.await()
+                    if (classResult.isFailure && needsOverlay) {
+                        // One retry: on a cold start the parallel class request can lose the race
+                        // against token/session setup.
+                        classResult = fetchLessonsV1(startIso, endIso, classElementId, "CLASS", "STANDARD", 1, anchorDate, maxEnrich, anchorRangeEnd)
+                    }
+                    if (classResult.isFailure && needsOverlay && strictOverlay) {
+                        android.util.Log.w("WebUntis", "Combined overlay failed, keeping previous data: ${classResult.exceptionOrNull()?.message}")
+                        return@coroutineScope Result.failure(classResult.exceptionOrNull() ?: Exception("Klassenplan nicht verfügbar"))
+                    }
+                    // Without anything better on screen the overlay stays best-effort: show the personal plan.
+                    val classLessons = classResult.getOrDefault(emptyList())
+                    Result.success(buildCombinedLessons(personal, classLessons, rule))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -1046,7 +1071,8 @@ class WebUntisRepository @Inject constructor(
         val numDays = sessionManager.timetableDays
         val today = LocalDate.now()
         val fetchDays = (numDays * 3).coerceAtLeast(21).toLong()
-        val rangeResult = fetchLessonsInRange(today.toUntis(), today.plusDays(fetchDays).toUntis())
+        val haveGoodData = cacheTimetableByAccount[currentAccountScope()]?.data?.getOrNull() != null
+        val rangeResult = fetchLessonsInRange(today.toUntis(), today.plusDays(fetchDays).toUntis(), strictOverlay = haveGoodData)
         if (rangeResult.isFailure) return@withCacheOrFetch Result.failure(rangeResult.exceptionOrNull()!!)
         val byDate = rangeResult.getOrThrow()
             .groupBy { it.date }.entries

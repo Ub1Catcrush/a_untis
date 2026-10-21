@@ -15,6 +15,11 @@
          the periodic WorkManager job before it ever runs, so scheduled-change notifications
          silently never show despite being correctly implemented. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Exact alarms for the fixed 06:00 / 18:00 background check. On Android 12+ the user has
+         to allow this once in the system settings (the app asks from Settings). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Re-arms the alarms after a reboot (alarms are cleared on shutdown). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Required to install APKs -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -38,6 +43,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".api.FixedCheckAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.webuntis.dashboard.action.FIXED_CHECK" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <!-- FileProvider for sharing downloaded homework attachments and APKs -->
         <provider

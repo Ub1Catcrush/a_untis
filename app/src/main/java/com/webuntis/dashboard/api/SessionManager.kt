@@ -108,13 +108,20 @@ class SessionManager @Inject constructor(
                     .remove(KEY_CLASS_NAME)
                     .apply()
             } else {
+                // A re-login response often carries no class id (0). Overwriting the persisted
+                // one with 0 made every timetable fetch running in the window before it gets
+                // re-resolved fall back to the unfiltered personal plan. Keep the known id for
+                // the same login.
+                val sameLogin = prefs.getString(KEY_SERVER, null) == value.server &&
+                    prefs.getString(KEY_USERNAME, null) == value.username
+                val keptClassId = if (value.classId == 0 && sameLogin) prefs.getInt(KEY_CLASS_ID, 0) else value.classId
                 prefs.edit()
                     .putString(KEY_SERVER,      value.server)
                     .putString(KEY_SCHOOLNAME,  value.schoolname)
                     .putString(KEY_USERNAME,    value.username)
                     .putString(KEY_SESSION_ID,  value.sessionId)
                     .putInt(KEY_PERSON_ID,      value.personId)
-                    .putInt(KEY_CLASS_ID,       value.classId)
+                    .putInt(KEY_CLASS_ID,       keptClassId)
                     .putString(KEY_PERSON_NAME, value.personName)
                     .putInt(KEY_PERSON_TYPE,    value.personType)
                     .putLong(KEY_SESSION_TIME,  System.currentTimeMillis())
@@ -425,6 +432,13 @@ class SessionManager @Inject constructor(
     var notificationsEnabled: Boolean
         get() = plainPrefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, false)
         set(value) { plainPrefs.edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, value).apply() }
+
+    /** Additionally runs the background check at fixed times (06:00 and 18:00) — on top of the
+     *  regular periodic check, which Android may delay or stop (Doze / OEM battery savers).
+     *  Only has an effect while [notificationsEnabled] is on. Default on. */
+    var fixedCheckTimesEnabled: Boolean
+        get() = plainPrefs.getBoolean(KEY_FIXED_CHECK_TIMES, true)
+        set(value) { plainPrefs.edit().putBoolean(KEY_FIXED_CHECK_TIMES, value).apply() }
 
     /** Per-category opt-out inside the master switch above (Settings → Benachrichtigungen).
      *  Everything defaults to ON. The same categories also exist as separate Android
@@ -825,6 +839,7 @@ class SessionManager @Inject constructor(
         private const val KEY_COMBINED_OVERLAY_MODE     = "combined_overlay_mode"   // legacy
         private const val KEY_COMBINED_OVERLAY_RULE     = "combined_overlay_rule"
         private const val KEY_NOTIFICATIONS_ENABLED  = "notifications_enabled"
+        private const val KEY_FIXED_CHECK_TIMES      = "fixed_check_times_enabled"
         private const val KEY_NOTIF_CATEGORY_PREFIX  = "notif_category_"
         private const val KEY_LAST_NOTIFIED_SNAPSHOT = "last_notified_snapshot"
         private const val KEY_CHANGES_LAST_VIEWED_AT = "changes_last_viewed_at"

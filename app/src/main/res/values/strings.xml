@@ -326,6 +326,9 @@
     <string name="settings_section_display">Anzeige</string>
     <string name="settings_section_notifications">Benachrichtigungen</string>
     <string name="settings_notifications_enabled">Bei Planänderungen benachrichtigen</string>
+    <string name="settings_fixed_check_times">Zusätzlich um 6:00 und 18:00 Uhr prüfen</string>
+    <string name="settings_fixed_check_times_desc">Feste Prüfung morgens und abends, auch wenn die regelmäßige Prüfung vom System gebremst wird. Läuft über einen exakten Wecker.</string>
+    <string name="settings_exact_alarm_hint">Berechtigung „Wecker &amp; Erinnerungen" fehlt – ohne sie läuft die Prüfung nur ungefähr zur Zeit. Tippen zum Erlauben.</string>
     <string name="settings_notifications_enabled_desc">Prüft regelmäßig im Hintergrund auf Ausfälle, Vertretungen, Raumänderungen, neue Nachrichten, Hausaufgaben und Klassenbucheinträge.</string>
     <string name="settings_notifications_permission_denied">Ohne Benachrichtigungs-Berechtigung kann diese Funktion keine Hinweise anzeigen.</string>
     <string name="settings_notifications_categories_title">Benachrichtigen über</string>
