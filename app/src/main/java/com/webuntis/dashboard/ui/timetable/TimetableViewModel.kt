@@ -9,6 +9,7 @@ import com.webuntis.dashboard.model.Lesson
 import com.webuntis.dashboard.model.Absence
 import com.webuntis.dashboard.model.UiState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
@@ -250,6 +251,10 @@ class TimetableViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             val anchor = _anchorDate.value
             val atDefault = anchor == null || anchor == LocalDate.now()
+            // The view this load was started for. If the user switches mode while it is still
+            // running, its result belongs to a view that is no longer shown and must be dropped.
+            val modeAtStart = repository.sessionManager.timetableViewMode
+            val ruleAtStart = repository.sessionManager.combinedOverlayRule
             if (userInitiated) _refreshing.value = true
             try {
                 if (contextChanged || _days.value !is UiState.Success) {
@@ -260,6 +265,12 @@ class TimetableViewModel @Inject constructor(
 
                 val result = if (atDefault) repository.getTwoSchoolDays(forceRefresh)
                 else repository.getSchoolDaysFrom(anchor, repository.sessionManager.timetableDays, forceRefresh)
+                // A cancelled job can still reach this point (a swallowed CancellationException in
+                // the network layer, or a result that arrived just before cancel()). Without this
+                // it would overwrite the new view's content with the old view's data / an Error.
+                ensureActive()
+                if (repository.sessionManager.timetableViewMode != modeAtStart ||
+                    repository.sessionManager.combinedOverlayRule != ruleAtStart) return@launch
                 result.fold(
                     onSuccess = { list -> _days.value = UiState.Success(list.map { SchoolDay(it) }) },
                     onFailure = {

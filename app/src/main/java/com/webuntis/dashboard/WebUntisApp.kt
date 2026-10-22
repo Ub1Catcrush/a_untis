@@ -27,7 +27,7 @@ class WebUntisApp : Application(), Configuration.Provider {
         // persists the schedule, but re-asserting it here is cheap/idempotent and guards
         // against it having been cleared, e.g. after an app update).
         if (sessionManager.notificationsEnabled) {
-            NotificationScheduler.start(this, sessionManager.fixedCheckTimesEnabled)
+            NotificationScheduler.start(this, sessionManager.activeFixedCheckHours)
         }
         registerActivityLifecycleCallbacks(ForegroundRefreshTracker())
     }

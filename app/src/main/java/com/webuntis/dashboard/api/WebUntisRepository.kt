@@ -315,6 +315,9 @@ class WebUntisRepository @Inject constructor(
 
     // Per-student data — scoped by account, so switching the active child doesn't show a
     // stale/mixed result left over from whoever was active before (see currentAccountScope()).
+    // Keyed by [timetablePersist].key (account + mode + day count + overlay rule), NOT just the
+    // account: a still-running fetch for another view can then only ever fill ITS OWN slot and
+    // can't leak into (or hide) the view that is on screen now.
     private var cacheTimetableByAccount:    MutableMap<String, CacheEntry<List<TimetableDay>>> = mutableMapOf()
     private var cacheHomeworkByAccount:     MutableMap<String, CacheEntry<Pair<List<Homework>, Map<String, String>>>> = mutableMapOf()
     private var cacheEventsByAccount:       MutableMap<String, CacheEntry<List<SchoolEvent>>> = mutableMapOf()
@@ -378,14 +381,12 @@ class WebUntisRepository @Inject constructor(
     fun setTimetableViewMode(mode: SessionManager.TimetableViewMode) {
         if (sessionManager.timetableViewMode == mode) return
         sessionManager.timetableViewMode = mode
-        cacheTimetableByAccount.clear()
     }
 
     /** Updates the rule deciding which class-plan subjects fill gaps in COMBINED mode and refreshes. */
     fun setCombinedOverlayRule(rule: CombinedOverlayRule) {
         if (sessionManager.combinedOverlayRule == rule) return
         sessionManager.combinedOverlayRule = rule
-        cacheTimetableByAccount.clear()
     }
 
     /**
@@ -433,14 +434,14 @@ class WebUntisRepository @Inject constructor(
     /** Like [getNameCatalog] but never hits the network: built from the cached timetable
      *  (memory or disk) only, or null if there isn't one yet. For painting stale content fast. */
     suspend fun peekNameCatalog(): NameCatalog? {
-        val lessons = (cacheTimetableByAccount[currentAccountScope()]?.data?.getOrNull()
+        val lessons = (cacheTimetableByAccount[timetablePersist().key]?.data?.getOrNull()
             ?: peekTwoSchoolDays())?.flatMap { it.lessons }
         if (lessons.isNullOrEmpty()) return null
         return buildNameCatalog(lessons)
     }
 
     suspend fun getNameCatalog(): NameCatalog {
-        val cachedLessons = cacheTimetableByAccount[currentAccountScope()]?.data?.getOrNull()?.flatMap { it.lessons }
+        val cachedLessons = cacheTimetableByAccount[timetablePersist().key]?.data?.getOrNull()?.flatMap { it.lessons }
             ?: peekTwoSchoolDays()?.flatMap { it.lessons }
         val lessons = if (!cachedLessons.isNullOrEmpty()) cachedLessons else {
             val start = LocalDate.now().minusDays(7).toUntis()
@@ -478,7 +479,7 @@ class WebUntisRepository @Inject constructor(
     fun isClassbookCacheFresh(): Boolean { val e = cacheClassbookByAccount[currentAccountScope()] ?: return false; return sessionManager.isCacheFresh(e.fetchedAt) }
     fun isAbsencesCacheFresh():  Boolean { val e = cacheAbsencesByAccount[currentAccountScope()]  ?: return false; return sessionManager.isCacheFresh(e.fetchedAt) }
     fun isMessagesCacheFresh():  Boolean { val e = cacheMessages  ?: return false; return sessionManager.isCacheFresh(e.fetchedAt) }
-    fun isTimetableCacheFresh(): Boolean { val e = cacheTimetableByAccount[currentAccountScope()] ?: return false; return sessionManager.isCacheFresh(e.fetchedAt) }
+    fun isTimetableCacheFresh(): Boolean { val e = cacheTimetableByAccount[timetablePersist().key] ?: return false; return sessionManager.isCacheFresh(e.fetchedAt) }
 
     private val gson: Gson = GsonBuilder()
         .setStrictness(Strictness.LENIENT)
@@ -860,7 +861,10 @@ class WebUntisRepository @Inject constructor(
         maxEnrich: Int = 40, anchorRangeEnd: LocalDate = anchorDate,
         // true = a COMBINED result whose class-plan overlay could not be loaded is reported as a
         // failure instead of a (silently unfiltered) success, so it never replaces good data.
-        strictOverlay: Boolean = false
+        strictOverlay: Boolean = false,
+        // View to fetch for; defaults to the live setting. getTwoSchoolDays pins it at call time.
+        modeSnapshot: SessionManager.TimetableViewMode? = null,
+        ruleSnapshot: CombinedOverlayRule? = null
     ): Result<List<Lesson>> {
         val session = sessionManager.session
             ?: return Result.failure(Exception("Nicht angemeldet"))
@@ -877,7 +881,7 @@ class WebUntisRepository @Inject constructor(
             primeCachedElementIdIfNeeded()
         }
 
-        val mode = sessionManager.timetableViewMode
+        val mode = modeSnapshot ?: sessionManager.timetableViewMode
         val classElementId = session.classId
         val effectiveClassId = sessionManager.studentId
         val canShowClass = sessionManager.canShowClassTimetable
@@ -906,7 +910,7 @@ class WebUntisRepository @Inject constructor(
                     val personalResult = personalDeferred.await()
                     val personal = personalResult.getOrNull()
                         ?: return@coroutineScope Result.failure(personalResult.exceptionOrNull() ?: Exception("Unbekannter Fehler"))
-                    val rule = sessionManager.combinedOverlayRule
+                    val rule = ruleSnapshot ?: sessionManager.combinedOverlayRule
                     val needsOverlay = rule.showRest || rule.included.isNotEmpty()
                     var classResult = classDeferred.await()
                     if (classResult.isFailure && needsOverlay) {
@@ -1056,23 +1060,32 @@ class WebUntisRepository @Inject constructor(
     /** Last known default timetable window, without network. Days that are already over are dropped. */
     suspend fun peekTwoSchoolDays(): List<TimetableDay>? {
         val p = timetablePersist()
-        val data = peekCached({ cacheTimetableByAccount[currentAccountScope()] },
-            { cacheTimetableByAccount[currentAccountScope()] = it }, p) ?: return null
+        val data = peekCached({ cacheTimetableByAccount[p.key] },
+            { cacheTimetableByAccount[p.key] = it }, p) ?: return null
         val today = LocalDate.now()
         return data.filter { !it.date.isBefore(today) }.takeIf { it.isNotEmpty() }
     }
 
-    suspend fun getTwoSchoolDays(forceRefresh: Boolean = false): Result<List<TimetableDay>> = withCacheOrFetch(
-        forceRefresh = forceRefresh,
-        cache = { cacheTimetableByAccount[currentAccountScope()] },
-        store = { cacheTimetableByAccount[currentAccountScope()] = it },
-        persist = timetablePersist(),
-    ) {
+    suspend fun getTwoSchoolDays(forceRefresh: Boolean = false): Result<List<TimetableDay>> {
+        // Snapshot the view ONCE. The fetch below can run for seconds (re-login, token, parallel
+        // requests); if the user switches mode meanwhile it must still fetch, cache and persist
+        // for the view it was started for — not mix in the new mode halfway through.
+        val persist = timetablePersist()
+        val memKey = persist.key
+        val modeSnap = sessionManager.timetableViewMode
+        val ruleSnap = sessionManager.combinedOverlayRule
         val numDays = sessionManager.timetableDays
+        return withCacheOrFetch(
+        forceRefresh = forceRefresh,
+        cache = { cacheTimetableByAccount[memKey] },
+        store = { cacheTimetableByAccount[memKey] = it },
+        persist = persist,
+    ) {
         val today = LocalDate.now()
         val fetchDays = (numDays * 3).coerceAtLeast(21).toLong()
-        val haveGoodData = cacheTimetableByAccount[currentAccountScope()]?.data?.getOrNull() != null
-        val rangeResult = fetchLessonsInRange(today.toUntis(), today.plusDays(fetchDays).toUntis(), strictOverlay = haveGoodData)
+        val haveGoodData = cacheTimetableByAccount[memKey]?.data?.getOrNull() != null
+        val rangeResult = fetchLessonsInRange(today.toUntis(), today.plusDays(fetchDays).toUntis(),
+            strictOverlay = haveGoodData, modeSnapshot = modeSnap, ruleSnapshot = ruleSnap)
         if (rangeResult.isFailure) return@withCacheOrFetch Result.failure(rangeResult.exceptionOrNull()!!)
         val byDate = rangeResult.getOrThrow()
             .groupBy { it.date }.entries
@@ -1083,6 +1096,7 @@ class WebUntisRepository @Inject constructor(
                 TimetableDay(untisIntToDate(d), merged.sortedBy { it.startTime })
             }
         Result.success(byDate)
+    }
     }
 
     /**

@@ -440,6 +440,20 @@ class SessionManager @Inject constructor(
         get() = plainPrefs.getBoolean(KEY_FIXED_CHECK_TIMES, true)
         set(value) { plainPrefs.edit().putBoolean(KEY_FIXED_CHECK_TIMES, value).apply() }
 
+    /** Full hours (0..23) at which the fixed-time check runs. Default 6 and 18; may be empty
+     *  (= no fixed check) or any of all 24 hours. */
+    var fixedCheckHours: Set<Int>
+        get() = plainPrefs.getString(KEY_FIXED_CHECK_HOURS, null)
+            ?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.filter { it in 0..23 }?.toSortedSet()
+            ?: setOf(6, 18)
+        set(value) {
+            plainPrefs.edit().putString(KEY_FIXED_CHECK_HOURS, value.filter { it in 0..23 }.toSortedSet().joinToString(",")).apply()
+        }
+
+    /** The hours that should actually have an alarm: empty unless the feature is on. */
+    val activeFixedCheckHours: Set<Int>
+        get() = if (notificationsEnabled && fixedCheckTimesEnabled) fixedCheckHours else emptySet()
+
     /** Per-category opt-out inside the master switch above (Settings → Benachrichtigungen).
      *  Everything defaults to ON. The same categories also exist as separate Android
      *  notification channels (see [NotificationHelper]), so each can be muted in the system
@@ -742,7 +756,7 @@ class SessionManager @Inject constructor(
             obj.get("useCompactWeekView")?.asBoolean?.let { useCompactWeekView = it }
             obj.get("notificationsEnabled")?.asBoolean?.let { enabled ->
                 notificationsEnabled = enabled
-                if (enabled) NotificationScheduler.start(context) else NotificationScheduler.stop(context)
+                if (enabled) NotificationScheduler.start(context, activeFixedCheckHours) else NotificationScheduler.stop(context)
             }
             obj.getAsJsonObject("notificationCategories")?.let { cats ->
                 NotificationCategory.values().forEach { c ->
@@ -840,6 +854,7 @@ class SessionManager @Inject constructor(
         private const val KEY_COMBINED_OVERLAY_RULE     = "combined_overlay_rule"
         private const val KEY_NOTIFICATIONS_ENABLED  = "notifications_enabled"
         private const val KEY_FIXED_CHECK_TIMES      = "fixed_check_times_enabled"
+        private const val KEY_FIXED_CHECK_HOURS      = "fixed_check_hours"
         private const val KEY_NOTIF_CATEGORY_PREFIX  = "notif_category_"
         private const val KEY_LAST_NOTIFIED_SNAPSHOT = "last_notified_snapshot"
         private const val KEY_CHANGES_LAST_VIEWED_AT = "changes_last_viewed_at"

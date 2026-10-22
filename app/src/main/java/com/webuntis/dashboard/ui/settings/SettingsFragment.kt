@@ -47,7 +47,7 @@ class SettingsFragment : Fragment() {
     ) { granted ->
         if (granted) {
             loginViewModel.sessionManager.notificationsEnabled = true
-            com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.fixedCheckTimesEnabled)
+            com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.activeFixedCheckHours)
             updateBatteryOptimizationUi()
             updateNotificationCategoriesEnabled()
             if (loginViewModel.sessionManager.fixedCheckTimesEnabled) requestExactAlarmPermission()
@@ -169,7 +169,7 @@ class SettingsFragment : Fragment() {
                 // flip sessionManager's flag until we actually know the outcome.
             } else {
                 loginViewModel.sessionManager.notificationsEnabled = true
-                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.fixedCheckTimesEnabled)
+                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.activeFixedCheckHours)
                 updateBatteryOptimizationUi()
                 updateNotificationCategoriesEnabled()
                 if (loginViewModel.sessionManager.fixedCheckTimesEnabled) requestExactAlarmPermission()
@@ -182,15 +182,18 @@ class SettingsFragment : Fragment() {
             loginViewModel.sessionManager.fixedCheckTimesEnabled = checked
             if (loginViewModel.sessionManager.notificationsEnabled) {
                 if (checked) {
-                    com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext())
+                    com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), loginViewModel.sessionManager.fixedCheckHours)
                     requestExactAlarmPermission()
                 } else {
                     com.webuntis.dashboard.api.NotificationScheduler.cancelFixedSlot(requireContext())
                 }
             }
             updateExactAlarmUi()
+            updateFixedHoursUi()
         }
         binding.textExactAlarmHint.setOnClickListener { requestExactAlarmPermission() }
+        binding.textFixedCheckHours.setOnClickListener { showFixedHoursDialog() }
+        updateFixedHoursUi()
         // Per-category switches (own Android channel each) + shortcut to the system's channel settings.
         bindNotificationCategories()
         binding.btnNotificationChannels.setOnClickListener { openSystemNotificationSettings() }
@@ -697,6 +700,39 @@ class SettingsFragment : Fragment() {
             }
     }
 
+    private fun updateFixedHoursUi() {
+        val sm = loginViewModel.sessionManager
+        val hours = sm.fixedCheckHours
+        binding.textFixedCheckHours.text =
+            if (hours.isEmpty()) getString(R.string.settings_fixed_hours_none)
+            else getString(R.string.settings_fixed_hours_summary, hours.joinToString(", ") { "%02d:00".format(it) })
+        binding.textFixedCheckHours.isEnabled = sm.fixedCheckTimesEnabled
+        binding.textFixedCheckHours.alpha = if (sm.fixedCheckTimesEnabled) 1f else 0.5f
+    }
+
+    /** Lets the user pick any of the 24 full hours; the next alarm is re-armed on confirm. */
+    private fun showFixedHoursDialog() {
+        val sm = loginViewModel.sessionManager
+        val current = sm.fixedCheckHours
+        val labels = Array(24) { "%02d:00".format(it) }
+        val checked = BooleanArray(24) { it in current }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_fixed_hours_title)
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val chosen = (0..23).filter { checked[it] }.toSet()
+                sm.fixedCheckHours = chosen
+                if (sm.notificationsEnabled && sm.fixedCheckTimesEnabled) {
+                    com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), chosen)
+                    if (chosen.isNotEmpty()) requestExactAlarmPermission()
+                }
+                updateFixedHoursUi()
+                updateExactAlarmUi()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     /** Opens the system screen to allow exact alarms (Android 12+), if not yet allowed. */
     private fun requestExactAlarmPermission() {
         val intent = com.webuntis.dashboard.api.NotificationScheduler.exactAlarmPermissionIntent(requireContext()) ?: return
@@ -828,7 +864,7 @@ class SettingsFragment : Fragment() {
             updateBatteryOptimizationUi()
             // Back from the system "alarms & reminders" screen: arm with the new permission state.
             if (loginViewModel.sessionManager.notificationsEnabled && loginViewModel.sessionManager.fixedCheckTimesEnabled) {
-                com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext())
+                com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), loginViewModel.sessionManager.fixedCheckHours)
             }
             updateExactAlarmUi()
         }

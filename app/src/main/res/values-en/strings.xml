@@ -323,8 +323,11 @@
     <string name="settings_section_display">Display</string>
     <string name="settings_section_notifications">Notifications</string>
     <string name="settings_notifications_enabled">Notify me about schedule changes</string>
-    <string name="settings_fixed_check_times">Also check at 6:00 and 18:00</string>
-    <string name="settings_fixed_check_times_desc">A fixed check every morning and evening, even if the regular check is throttled by the system. Uses an exact alarm.</string>
+    <string name="settings_fixed_check_times">Also check at fixed times</string>
+    <string name="settings_fixed_check_times_desc">A fixed check at freely chosen full hours (default 6:00 and 18:00), even if the regular check is throttled by the system. Uses exact alarms.</string>
+    <string name="settings_fixed_hours_title">Choose check times</string>
+    <string name="settings_fixed_hours_summary">Times: %1$s – tap to change</string>
+    <string name="settings_fixed_hours_none">No time selected – tap to choose</string>
     <string name="settings_exact_alarm_hint">"Alarms &amp; reminders" permission missing – without it the check only runs at roughly that time. Tap to allow.</string>
     <string name="settings_notifications_enabled_desc">Periodically checks in the background for cancellations, substitutions, room changes, new messages, homework, and classbook entries.</string>
     <string name="settings_notifications_permission_denied">Without notification permission, this feature can\'t show any alerts.</string>

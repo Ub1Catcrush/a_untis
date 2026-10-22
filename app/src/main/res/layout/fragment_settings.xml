@@ -527,6 +527,17 @@
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
+                        android:id="@+id/text_fixed_check_hours"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:minHeight="48dp"
+                        android:gravity="center_vertical"
+                        android:background="?attr/selectableItemBackground"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorPrimary" />
+
+                    <TextView
                         android:id="@+id/text_exact_alarm_hint"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
