@@ -194,6 +194,11 @@ class WebUntisRepository @Inject constructor(
 
     private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val TEACHING_RECENT_REFRESH_DAYS = 7
+    /** Silent auto-revalidation (app start / resume): at most this often per cache … */
+    private val TEACHING_MIN_REVALIDATE_MS = 2 * 60_000L
+    /** … and the WHOLE covered window (not just the recent days) is re-checked at most this often.
+     *  Teachers often enter the content days later, so older days must be re-checked too. */
+    private val TEACHING_FULL_CHECK_INTERVAL_MS = 30 * 60_000L
 
     /** Disk keys are scoped to server + user + active account, so one login can never be
      *  shown another login's data (and the two accounts of a parent don't mix). */
@@ -347,7 +352,7 @@ class WebUntisRepository @Inject constructor(
     /** What the "Unterrichtsinhalte" tab has loaded so far: only lessons that actually carry a
      *  teaching content text, the number of days back from today they cover, and when the
      *  cache was last refreshed from the server. Mirrored to disk like the other caches. */
-    private data class TeachingContentCache(val days: Int, val entries: List<Lesson>, val fetchedAt: Long)
+    private data class TeachingContentCache(val days: Int, val entries: List<Lesson>, val fetchedAt: Long, val fullCheckedAt: Long = 0L)
 
     /**
      * Full reset: clears data caches AND wipes the session/credentials/settings entirely.
@@ -1644,9 +1649,19 @@ class WebUntisRepository @Inject constructor(
     /** Last known Unterrichtsinhalte for a [days]-day window without touching the network
      *  (memory, else disk), or null if nothing has been loaded yet. Whatever days the cache
      *  covers are returned, even if fewer than [days]. */
-    suspend fun peekTeachingContentEntries(days: Int): List<Lesson>? = teachingContentMutex.withLock {
-        val cache = loadTeachingCache() ?: return@withLock null
-        filterTeachingContent(cache.entries, days, LocalDate.now())
+    suspend fun peekTeachingContentEntries(days: Int): List<Lesson>? {
+        // Deliberately WITHOUT [teachingContentMutex]: a refresh holds it for its whole run (up to
+        // hundreds of per-lesson detail calls). Waiting for it here left the tab on a spinner /
+        // empty although cached content was available.
+        val scope = currentAccountScope()
+        val cache = cacheTeachingContentByAccount[scope] ?: run {
+            val p = teachingPersist()
+            val loaded = withContext(Dispatchers.IO) { diskCache.read<TeachingContentCache>(p.key, p.type) }
+                ?.second ?: return null
+            cacheTeachingContentByAccount.putIfAbsent(scope, loaded)
+            loaded
+        }
+        return filterTeachingContent(cache.entries, days, LocalDate.now())
     }
 
     /**
@@ -1669,7 +1684,7 @@ class WebUntisRepository @Inject constructor(
      * this tab — today and the most recent past days, e.g. "yesterday" — are prioritized and
      * always end up enriched, rather than being pushed out by the far end of the range.
      */
-    suspend fun getTeachingContentEntries(days: Int, forceRefresh: Boolean = false): Result<List<Lesson>> =
+    suspend fun getTeachingContentEntries(days: Int, forceRefresh: Boolean = false, revalidate: Boolean = false): Result<List<Lesson>> =
         teachingContentMutex.withLock {
             val scope = currentAccountScope()
             val today = LocalDate.now()
@@ -1679,19 +1694,35 @@ class WebUntisRepository @Inject constructor(
             var fetchedAt = cache?.fetchedAt ?: 0L
             var changed = false
 
-            // 1) TTL-stale cache: refresh just the recent days. A failure here is silent —
-            //    the cached content stays valid to show.
-            if (cache != null && !sessionManager.isCacheFresh(cache.fetchedAt)) {
-                val recent = minOf(days, coveredDays, TEACHING_RECENT_REFRESH_DAYS).coerceAtLeast(1)
+            // 1) Refresh what is cached. Normally only once the cache is TTL-stale; [revalidate]
+            //    (silent refresh on app start / resume) also does it while the cache is still
+            //    "fresh", but not more often than TEACHING_MIN_REVALIDATE_MS. Usually only the
+            //    recent days are re-fetched; the whole covered window is re-checked every
+            //    TEACHING_FULL_CHECK_INTERVAL_MS, because content for older days is often
+            //    entered later and would otherwise only show up after a manual force reload.
+            //    A failure here is silent — the cached content stays valid to show.
+            val now = System.currentTimeMillis()
+            var fullCheckedAt = cache?.fullCheckedAt ?: 0L
+            val needsRefresh = cache != null && (
+                !sessionManager.isCacheFresh(cache.fetchedAt) ||
+                    (revalidate && now - cache.fetchedAt > TEACHING_MIN_REVALIDATE_MS))
+            if (cache != null && needsRefresh) {
+                val covered = minOf(days, coveredDays).coerceAtLeast(1)
+                val fullCheck = now - fullCheckedAt > TEACHING_FULL_CHECK_INTERVAL_MS
+                val recent = (if (fullCheck) covered else minOf(covered, TEACHING_RECENT_REFRESH_DAYS)).coerceAtLeast(1)
                 val recentStart = today.minusDays((recent - 1).toLong())
                 val res = fetchLessonsInRange(
                     recentStart.toUntis(), today.toUntis(), anchorDate = today,
                     maxEnrich = (recent * 8).coerceIn(40, 400)
                 )
                 res.getOrNull()?.let { fresh ->
-                    entries = entries.filter { l -> l.localDate?.let { it.isBefore(recentStart) } ?: true } +
-                        fresh.filter { !it.teachingContent.isNullOrBlank() }
-                    fetchedAt = System.currentTimeMillis()
+                    val freshWithContent = fresh.filter { !it.teachingContent.isNullOrBlank() }
+                    val freshIds = freshWithContent.map { it.id }.toSet()
+                    // Keep what is already known unless the server now returns that lesson with
+                    // content — a lesson whose detail call merely failed must not wipe its entry.
+                    entries = (entries.filter { l -> l.id !in freshIds } + freshWithContent).distinctBy { it.id }
+                    fetchedAt = now
+                    if (fullCheck) fullCheckedAt = now
                     changed = true
                 }
             }
@@ -1723,7 +1754,7 @@ class WebUntisRepository @Inject constructor(
             }
 
             if (changed) {
-                val updated = TeachingContentCache(coveredDays, entries, fetchedAt)
+                val updated = TeachingContentCache(coveredDays, entries, fetchedAt, fullCheckedAt)
                 cacheTeachingContentByAccount[scope] = updated
                 val p = teachingPersist()
                 persistScope.launch { diskCache.write(p.key, fetchedAt, updated) }

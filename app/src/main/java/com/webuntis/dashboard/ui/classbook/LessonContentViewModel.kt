@@ -66,8 +66,8 @@ class LessonContentViewModel @Inject constructor(
     private var loadJob: Job? = null
 
     init {
-        load()
-        viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { load() } }
+        load(revalidate = true)
+        viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { load(revalidate = true) } }
         viewModelScope.launch { activeAccountManager.current.drop(1).collect { load(contextChanged = true) } }
     }
 
@@ -78,7 +78,7 @@ class LessonContentViewModel @Inject constructor(
      * the cache and reloads the whole window; a plain [load] (start / app resume) only
      * refreshes the most recent days once the cache is older than the cache TTL.
      */
-    fun load(forceRefresh: Boolean = false, contextChanged: Boolean = false, userInitiated: Boolean = false) {
+    fun load(forceRefresh: Boolean = false, contextChanged: Boolean = false, userInitiated: Boolean = false, revalidate: Boolean = false) {
         if (contextChanged) loadJob?.cancel()
         loadJob = viewModelScope.launch {
             if (userInitiated) _refreshing.value = true
@@ -93,7 +93,7 @@ class LessonContentViewModel @Inject constructor(
                         _state.value = UiState.Success(group(cached, _groupMode.value))
                     } else _state.value = UiState.Loading
                 }
-                fetchAndApply(_windowDays.value, forceRefresh)
+                fetchAndApply(_windowDays.value, forceRefresh, revalidate)
             } finally {
                 if (userInitiated) _refreshing.value = false
             }
@@ -127,8 +127,8 @@ class LessonContentViewModel @Inject constructor(
         }
     }
 
-    private suspend fun fetchAndApply(days: Int, forceRefresh: Boolean) {
-        repository.getTeachingContentEntries(days, forceRefresh).fold(
+    private suspend fun fetchAndApply(days: Int, forceRefresh: Boolean, revalidate: Boolean = false) {
+        repository.getTeachingContentEntries(days, forceRefresh, revalidate).fold(
             onSuccess = { lessons -> applyResult(lessons, days) },
             onFailure = {
                 if (_state.value !is UiState.Success) _state.value = UiState.Error(it.message ?: "Fehler beim Laden")
