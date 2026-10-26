@@ -132,13 +132,16 @@ class TimeIndicatorView @JvmOverloads constructor(
             val pos   = rv.getChildAdapterPosition(child)
             if (pos == RecyclerView.NO_POSITION) continue
             rv.getDecoratedBoundsWithMargins(child, bounds)
-            realByPos[pos] = floatArrayOf((bounds.top + offsetY).toFloat(), (bounds.bottom + offsetY).toFloat())
+            // The decorated bounds also contain the break space above the row (BreakGapDecoration);
+            // the row itself — what the lesson times map onto — starts below it.
+            val cardTop = bounds.top + (rv.layoutManager?.getTopDecorationHeight(child) ?: 0)
+            realByPos[pos] = floatArrayOf((cardTop + offsetY).toFloat(), (bounds.bottom + offsetY).toFloat())
         }
         if (realByPos.isEmpty()) return null
 
         // Same proportional scale used to size cards — only used to ESTIMATE the position of
         // groups that aren't currently rendered.
-        val pxPerMin = 48f * density / 45f
+        val pxPerMin = LessonAdapter.pxPerMin(density)
         fun minutesOf(group: LessonGroup): Pair<Int, Int> {
             val s = (group.startTime / 100) * 60 + (group.startTime % 100)
             val e = (group.endTime   / 100) * 60 + (group.endTime   % 100)
@@ -160,7 +163,8 @@ class TimeIndicatorView @JvmOverloads constructor(
         for (pos in (firstRenderedPos + 1) until groups.size) {
             val (sMin, eMin) = minutesOf(groups[pos])
             val real = realByPos[pos]
-            val top = real?.get(0) ?: lastBottom
+            // Not rendered: previous bottom + the break between the two rows + own duration.
+            val top = real?.get(0) ?: (lastBottom + BreakGapDecoration.gapPx(groups[pos - 1], groups[pos], density))
             val bottom = real?.get(1) ?: (top + (eMin - sMin).coerceAtLeast(1) * pxPerMin)
             items.add(ItemBounds(sMin, eMin, top.toInt(), bottom.toInt()))
             lastBottom = bottom
@@ -169,7 +173,7 @@ class TimeIndicatorView @JvmOverloads constructor(
         var firstTop = items.first().topPx.toFloat()
         for (pos in (firstRenderedPos - 1) downTo 0) {
             val (sMin, eMin) = minutesOf(groups[pos])
-            val bottom = firstTop
+            val bottom = firstTop - BreakGapDecoration.gapPx(groups[pos], groups[pos + 1], density)
             val top = bottom - (eMin - sMin).coerceAtLeast(1) * pxPerMin
             items.add(0, ItemBounds(sMin, eMin, top.toInt(), bottom.toInt()))
             firstTop = top

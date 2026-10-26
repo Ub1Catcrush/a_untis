@@ -86,6 +86,8 @@ class AbsenceDecoration : RecyclerView.ItemDecoration() {
 
             val rect = Rect()
             parent.getDecoratedBoundsWithMargins(child, rect)
+            // Skip the break space BreakGapDecoration leaves above the row.
+            rect.top += parent.layoutManager?.getTopDecorationHeight(child) ?: 0
             covered.add(CoveredRow(pos, rect, matching))
         }
         if (covered.isEmpty()) return

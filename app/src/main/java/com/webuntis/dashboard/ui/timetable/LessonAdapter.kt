@@ -73,10 +73,7 @@ class LessonAdapter : ListAdapter<LessonGroup, LessonAdapter.GroupViewHolder>(Gr
             val startMin    = (first.startTime / 100) * 60 + (first.startTime % 100)
             val endMin      = (first.endTime   / 100) * 60 + (first.endTime   % 100)
             val durationMin = (endMin - startMin).coerceAtLeast(1)
-            val BASE_DP     = 48f // Reduced to fit ~10-12 hours per screen
-            val BASE_MIN    = 45f
-            val heightDp    = BASE_DP * (durationMin / BASE_MIN)
-            val minHeightPx = (heightDp * ctx.resources.displayMetrics.density).toInt()
+            val minHeightPx = (durationMin * pxPerMin(ctx.resources.displayMetrics.density)).toInt()
 
             b.root.minimumHeight = minHeightPx
             b.lessonsContainer.removeAllViews()
@@ -231,6 +228,17 @@ class LessonAdapter : ListAdapter<LessonGroup, LessonAdapter.GroupViewHolder>(Gr
                 b.cardRoot.strokeWidth = (1 * ctx.resources.displayMetrics.density).toInt()
             }
         }
+    }
+
+    companion object {
+        private const val BASE_DP  = 48f // dp per BASE_MIN minutes
+        private const val BASE_MIN = 45f
+
+        /** Pixels per minute — shared by the row heights, [BreakGapDecoration] and [TimeIndicatorView]. */
+        fun pxPerMin(density: Float): Float = BASE_DP * density / BASE_MIN
+
+        /** HHmm (e.g. 1315) -> minutes since midnight. */
+        fun toMinutes(hhmm: Int): Int = (hhmm / 100) * 60 + (hhmm % 100)
     }
 
     object GroupDiff : DiffUtil.ItemCallback<LessonGroup>() {

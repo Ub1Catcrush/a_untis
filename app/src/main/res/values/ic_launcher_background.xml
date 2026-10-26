@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Orange of the icon's border; only visible where a launcher mask is larger than the artwork. -->
+    <color name="ic_launcher_background">#FF6E01</color>
+</resources>

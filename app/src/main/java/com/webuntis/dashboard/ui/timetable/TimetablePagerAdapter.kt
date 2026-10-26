@@ -81,6 +81,7 @@ class DayFragment : Fragment() {
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
+        binding.recyclerView.addItemDecoration(BreakGapDecoration())
         binding.recyclerView.addItemDecoration(AbsenceDecoration())
         // Give TimeIndicatorView a reference so it can read real child bounds
         binding.timeIndicator.recyclerView = binding.recyclerView
@@ -152,7 +153,8 @@ class DayFragment : Fragment() {
 
                                 binding.recyclerView.isVisible = true
                                 binding.emptyView.isVisible = false
-                                adapter.submitList(day.groupedLessons)
+                                // Gaps depend on the list contents: recompute them once it is committed.
+                                adapter.submitList(day.groupedLessons) { binding.recyclerView.invalidateItemDecorations() }
 
                                 // Time indicator
                                 val allLessons = day.day.lessons
