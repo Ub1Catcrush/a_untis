@@ -298,15 +298,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        /** Tap on a change notification: open the "Neuigkeiten" dialog once logged in. */
-        const val ACTION_OPEN_RECENT_CHANGES = "com.webuntis.dashboard.action.OPEN_RECENT_CHANGES"
+        /** Tap on a notification: open [EXTRA_TARGET] once logged in. */
+        const val ACTION_OPEN_FROM_NOTIFICATION = "com.webuntis.dashboard.action.OPEN_FROM_NOTIFICATION"
+        const val EXTRA_TARGET = "notification_target"
+        const val TARGET_CHANGES   = "changes"    // "Neuigkeiten" dialog (lesson changes)
+        const val TARGET_MESSAGES  = "messages"
+        const val TARGET_HOMEWORK  = "homework"
+        const val TARGET_CLASSBOOK = "classbook"
 
         /** Longest the start waits for the update check before just continuing. */
         private const val UPDATE_CHECK_TIMEOUT_MS = 5_000L
     }
 
-    /** Set by a tapped change notification; consumed as soon as it's safe to navigate. */
-    private var pendingOpenRecentChanges = false
+    /** Set by a tapped notification; consumed as soon as it's safe to navigate. */
+    private var pendingTarget: String? = null
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
@@ -316,24 +321,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleLaunchIntent(intent: android.content.Intent?) {
-        if (intent?.action == ACTION_OPEN_RECENT_CHANGES) {
-            pendingOpenRecentChanges = true
-            // Consumed: a later recreate (rotation, process restore) must not re-open the dialog.
+        if (intent?.action == ACTION_OPEN_FROM_NOTIFICATION) {
+            pendingTarget = intent.getStringExtra(EXTRA_TARGET) ?: TARGET_CHANGES
+            // Consumed: a later recreate (rotation, process restore) must not navigate again.
             intent.action = android.content.Intent.ACTION_MAIN
         }
     }
 
     /**
-     * Opens the "Neuigkeiten" dialog for a tapped notification — but only on top of the real app:
-     * never while the login screen is showing (the login collector retries after navigating on)
-     * and not before the start-up update check has finished.
+     * Opens what a tapped notification points at — the matching tab (messages, homework,
+     * classbook), or the timetable tab plus the "Neuigkeiten" dialog for lesson changes — but only on top of the real
+     * app: never while the login screen is showing (the login collector retries after navigating
+     * on) and not before the start-up update check has finished.
      */
     private fun consumePendingOpenRecentChanges() {
-        if (!pendingOpenRecentChanges || !::navController.isInitialized) return
+        val target = pendingTarget ?: return
+        if (!::navController.isInitialized) return
         if (!updateGate.isOpen.value) return
         val current = navController.currentDestination?.id ?: return
         if (current == R.id.loginFragment) return
-        pendingOpenRecentChanges = false
-        if (current != R.id.recentChangesDialogFragment) navController.navigate(R.id.recentChangesDialogFragment)
+        pendingTarget = null
+        if (target == TARGET_CHANGES) {
+            // Lesson changes: timetable tab underneath, "Neuigkeiten" dialog on top — so closing
+            // the dialog leaves the user on the timetable, whatever tab was open before.
+            if (current == R.id.recentChangesDialogFragment) return
+            if (current != R.id.timetableFragment) navController.navigate(R.id.timetableFragment)
+            navController.navigate(R.id.recentChangesDialogFragment)
+            return
+        }
+        val destination = when (target) {
+            TARGET_MESSAGES  -> R.id.messagesFragment
+            TARGET_HOMEWORK  -> R.id.homeworkFragment
+            else             -> R.id.classbookFragment
+        }
+        if (current != destination) navController.navigate(destination)
     }
 }

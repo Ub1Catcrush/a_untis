@@ -48,7 +48,7 @@ class NotificationHelper @Inject constructor(
         private const val ID_MESSAGES      = 20_000
         private const val ID_HOMEWORK      = 20_001
         private const val ID_CLASSBOOK     = 20_002
-        private const val REQUEST_OPEN_RECENT_CHANGES = 30_000
+        private const val REQUEST_OPEN_BASE = 30_000
     }
 
     fun ensureChannels() {
@@ -111,25 +111,37 @@ class NotificationHelper @Inject constructor(
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
-    /** Opens the "Neuigkeiten" dialog (see RecentChangesDialogFragment) showing exactly what
-     *  changed, rather than dropping the user on a fragment that only shows current state
-     *  (e.g. the summary "45 Stunden geändert" notification didn't say which 45). Used as the
-     *  tap target for all four change-check notification categories. */
-    private fun recentChangesIntent(): PendingIntent {
-        // NOT a NavDeepLinkBuilder: that rebuilds the back stack from the graph's start
-        // destination (the LOGIN screen) and clears the running task, so tapping a notification
-        // while the app was open / logged in put the login screen under the dialog (and left it
-        // unusable). A plain intent just brings the existing MainActivity forward; it opens the
-        // dialog itself once it knows the user is logged in (see MainActivity.handleLaunchIntent).
+    /**
+     * Tap target of a notification. Lesson changes (cancellation / substitution / room change)
+     * open the "Neuigkeiten" dialog (RecentChangesDialogFragment), which lists exactly what
+     * changed — a summary like "45 Stunden geändert" doesn't say which. Messages, homework and
+     * classbook entries open the tab they belong to instead.
+     *
+     * A plain intent, NOT a NavDeepLinkBuilder: that rebuilds the back stack from the graph's
+     * start destination (the LOGIN screen) and clears the running task, so tapping a notification
+     * while the app was open put the login screen under the target (and left it unusable).
+     * MainActivity opens the target itself once it knows the user is logged in.
+     */
+    private fun openIntent(target: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_OPEN_RECENT_CHANGES
+            action = MainActivity.ACTION_OPEN_FROM_NOTIFICATION
+            putExtra(MainActivity.EXTRA_TARGET, target)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+        // Extras don't count for PendingIntent equality — each target needs its own request code.
+        val requestCode = REQUEST_OPEN_BASE + when (target) {
+            MainActivity.TARGET_MESSAGES  -> 1
+            MainActivity.TARGET_HOMEWORK  -> 2
+            MainActivity.TARGET_CLASSBOOK -> 3
+            else                          -> 0
+        }
         return PendingIntent.getActivity(
-            context, REQUEST_OPEN_RECENT_CHANGES, intent,
+            context, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
+
+    private fun recentChangesIntent(): PendingIntent = openIntent(MainActivity.TARGET_CHANGES)
 
     private fun notify(id: Int, notification: android.app.Notification) {
         if (!hasPermission()) return
@@ -198,7 +210,7 @@ class NotificationHelper @Inject constructor(
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setAutoCancel(true)
-            .setContentIntent(recentChangesIntent())
+            .setContentIntent(openIntent(MainActivity.TARGET_MESSAGES))
 
         if (messages.size == 1) {
             val m = messages.first()
@@ -242,7 +254,7 @@ class NotificationHelper @Inject constructor(
             .setContentTitle(context.getString(R.string.notif_homework_title))
             .setContentText(text)
             .setAutoCancel(true)
-            .setContentIntent(recentChangesIntent())
+            .setContentIntent(openIntent(MainActivity.TARGET_HOMEWORK))
             .build()
         notify(ID_HOMEWORK, notification)
     }
@@ -255,7 +267,7 @@ class NotificationHelper @Inject constructor(
             .setContentTitle(context.getString(R.string.notif_classbook_title))
             .setContentText(text)
             .setAutoCancel(true)
-            .setContentIntent(recentChangesIntent())
+            .setContentIntent(openIntent(MainActivity.TARGET_CLASSBOOK))
             .build()
         notify(ID_CLASSBOOK, notification)
     }
