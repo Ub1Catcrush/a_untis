@@ -9,7 +9,7 @@ import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import androidx.navigation.NavDeepLinkBuilder
+import android.content.Intent
 import com.webuntis.dashboard.MainActivity
 import com.webuntis.dashboard.R
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -48,6 +48,7 @@ class NotificationHelper @Inject constructor(
         private const val ID_MESSAGES      = 20_000
         private const val ID_HOMEWORK      = 20_001
         private const val ID_CLASSBOOK     = 20_002
+        private const val REQUEST_OPEN_RECENT_CHANGES = 30_000
     }
 
     fun ensureChannels() {
@@ -114,12 +115,21 @@ class NotificationHelper @Inject constructor(
      *  changed, rather than dropping the user on a fragment that only shows current state
      *  (e.g. the summary "45 Stunden geändert" notification didn't say which 45). Used as the
      *  tap target for all four change-check notification categories. */
-    private fun recentChangesIntent(): PendingIntent =
-        NavDeepLinkBuilder(context)
-            .setGraph(R.navigation.nav_graph)
-            .setDestination(R.id.recentChangesDialogFragment)
-            .setComponentName(MainActivity::class.java)
-            .createPendingIntent()
+    private fun recentChangesIntent(): PendingIntent {
+        // NOT a NavDeepLinkBuilder: that rebuilds the back stack from the graph's start
+        // destination (the LOGIN screen) and clears the running task, so tapping a notification
+        // while the app was open / logged in put the login screen under the dialog (and left it
+        // unusable). A plain intent just brings the existing MainActivity forward; it opens the
+        // dialog itself once it knows the user is logged in (see MainActivity.handleLaunchIntent).
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = MainActivity.ACTION_OPEN_RECENT_CHANGES
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            context, REQUEST_OPEN_RECENT_CHANGES, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
 
     private fun notify(id: Int, notification: android.app.Notification) {
         if (!hasPermission()) return

@@ -87,6 +87,8 @@ class MainActivity : AppCompatActivity() {
         navController = navHostFragment.navController
 
         buildTabs()
+        // Cold start from a notification tap (not on recreate: the action is consumed then).
+        if (savedInstanceState == null) handleLaunchIntent(intent)
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             val isLoginScreen = destination.id == R.id.loginFragment
@@ -113,7 +115,10 @@ class MainActivity : AppCompatActivity() {
                     if (loggedIn) checkAndShowUnseenChanges()
                     // The start overlay hid the login screen while the app decided where to
                     // go; posted so the target screen is attached before the cover comes off.
-                    binding.root.post { binding.updateGateOverlay.visibility = View.GONE }
+                    binding.root.post {
+                        binding.updateGateOverlay.visibility = View.GONE
+                        if (loggedIn) consumePendingOpenRecentChanges()
+                    }
                 }
             }
         }
@@ -292,8 +297,43 @@ class MainActivity : AppCompatActivity() {
         return color
     }
 
-    private companion object {
+    companion object {
+        /** Tap on a change notification: open the "Neuigkeiten" dialog once logged in. */
+        const val ACTION_OPEN_RECENT_CHANGES = "com.webuntis.dashboard.action.OPEN_RECENT_CHANGES"
+
         /** Longest the start waits for the update check before just continuing. */
-        const val UPDATE_CHECK_TIMEOUT_MS = 5_000L
+        private const val UPDATE_CHECK_TIMEOUT_MS = 5_000L
+    }
+
+    /** Set by a tapped change notification; consumed as soon as it's safe to navigate. */
+    private var pendingOpenRecentChanges = false
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+        consumePendingOpenRecentChanges()
+    }
+
+    private fun handleLaunchIntent(intent: android.content.Intent?) {
+        if (intent?.action == ACTION_OPEN_RECENT_CHANGES) {
+            pendingOpenRecentChanges = true
+            // Consumed: a later recreate (rotation, process restore) must not re-open the dialog.
+            intent.action = android.content.Intent.ACTION_MAIN
+        }
+    }
+
+    /**
+     * Opens the "Neuigkeiten" dialog for a tapped notification — but only on top of the real app:
+     * never while the login screen is showing (the login collector retries after navigating on)
+     * and not before the start-up update check has finished.
+     */
+    private fun consumePendingOpenRecentChanges() {
+        if (!pendingOpenRecentChanges || !::navController.isInitialized) return
+        if (!updateGate.isOpen.value) return
+        val current = navController.currentDestination?.id ?: return
+        if (current == R.id.loginFragment) return
+        pendingOpenRecentChanges = false
+        if (current != R.id.recentChangesDialogFragment) navController.navigate(R.id.recentChangesDialogFragment)
     }
 }
