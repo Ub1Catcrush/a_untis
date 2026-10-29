@@ -364,9 +364,14 @@ class WebUntisRepository @Inject constructor(
         sessionManager.clearAll()
     }
 
-    /** Invalidates only data caches (timetable, absences, …) without touching the session or credentials. */
+    /**
+     * Marks the data caches (timetable, absences, …) as outdated without touching the session or
+     * credentials — and WITHOUT deleting them. The old content stays visible (memory and disk)
+     * until the refresh that follows replaces it; deleting it left the screens empty meanwhile,
+     * and permanently if that refresh failed (offline, server hiccup).
+     */
     fun clearDataCachesOnly() {
-        clearAllDataCaches()
+        sessionManager.invalidateDataCaches()
     }
 
     private fun clearAllDataCaches() {
@@ -2452,9 +2457,8 @@ class WebUntisRepository @Inject constructor(
             // could show up even though nothing was actually created server-side.
             rawBody(resp) ?: return Result.failure(Exception("Nachricht wurde nicht gesendet"))
 
-            // Invalidate inbox + sent caches
-            cacheMessages = null; cacheSentMessages = null
-            diskCache.deleteContaining("_messages_inbox"); diskCache.deleteContaining("_messages_sent")
+            // Inbox + sent are outdated now — keep showing them until the refresh swaps them.
+            sessionManager.invalidateDataCaches()
             Result.success(Unit)
         } catch (e: Exception) {
             if (e is SessionExpiredException) throw e
@@ -2520,8 +2524,7 @@ class WebUntisRepository @Inject constructor(
             val responseRaw = rawBody(resp)
                 ?: return Result.failure(Exception("Leere Antwort vom Server"))
             val saved: Message = gson.fromJson(responseRaw, Message::class.java)
-            cacheDraftMessages = null
-            diskCache.deleteContaining("_messages_drafts")
+            sessionManager.invalidateDataCaches()   // drafts outdated; old list stays until refreshed
             Result.success(saved.copy(storedIn = "DRAFT"))
         } catch (e: Exception) { Result.failure(e) }
     }
@@ -2543,13 +2546,23 @@ class WebUntisRepository @Inject constructor(
             ensureCsrfToken() // same session cookie rides along even on this Bearer-token endpoint
             val token = tokenForMessage(msg) ?: return Result.failure(Exception("Nicht authentifiziert"))
             service().deleteMessage(token, msg.id)
+            // Take the deleted message out of the cached list (memory + disk) instead of dropping
+            // the whole cache, so the list stays populated and no deleted entry reappears.
             when {
-                msg.isDraft -> { cacheDraftMessages = null; diskCache.deleteContaining("_messages_drafts") }
-                msg.isSent  -> { cacheSentMessages  = null; diskCache.deleteContaining("_messages_sent") }
-                else        -> { cacheMessages      = null; diskCache.deleteContaining("_messages_inbox") }
+                msg.isDraft -> cacheDraftMessages = withoutMessage(cacheDraftMessages, msg.id, "drafts")
+                msg.isSent  -> cacheSentMessages  = withoutMessage(cacheSentMessages,  msg.id, "sent")
+                else        -> cacheMessages      = withoutMessage(cacheMessages,      msg.id, "inbox")
             }
+            sessionManager.invalidateDataCaches()
             Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
+    }
+
+    private fun withoutMessage(entry: CacheEntry<List<Message>>?, id: Int, kind: String): CacheEntry<List<Message>>? {
+        val list = entry?.data?.getOrNull() ?: return entry
+        val pruned = list.filter { it.id != id }
+        persistScope.launch { diskCache.write(messagesPersist(kind).key, entry.fetchedAt, pruned) }
+        return CacheEntry(entry.fetchedAt, Result.success(pruned))
     }
 
     // ─── TEACHERS ─────────────────────────────────────────────────────────────

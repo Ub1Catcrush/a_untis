@@ -440,19 +440,29 @@ class SessionManager @Inject constructor(
         get() = plainPrefs.getBoolean(KEY_FIXED_CHECK_TIMES, true)
         set(value) { plainPrefs.edit().putBoolean(KEY_FIXED_CHECK_TIMES, value).apply() }
 
-    /** Full hours (0..23) at which the fixed-time check runs. Default 6 and 18; may be empty
-     *  (= no fixed check) or any of all 24 hours. */
-    var fixedCheckHours: Set<Int>
-        get() = plainPrefs.getString(KEY_FIXED_CHECK_HOURS, null)
-            ?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.filter { it in 0..23 }?.toSortedSet()
-            ?: setOf(6, 18)
+    /** Times of day for the fixed-time check, as MINUTES since midnight (0..1439); the UI offers
+     *  a 15-minute grid. Default 06:00 (360) and 18:00 (1080); may be empty (= no fixed check).
+     *  Earlier builds stored full hours under another key — those are converted on read. */
+    var fixedCheckSlots: Set<Int>
+        get() {
+            fun parse(raw: String) = raw.split(',').mapNotNull { it.trim().toIntOrNull() }
+            plainPrefs.getString(KEY_FIXED_CHECK_SLOTS, null)?.let { raw ->
+                return parse(raw).filter { it in 0..1439 }.toSortedSet()
+            }
+            plainPrefs.getString(KEY_FIXED_CHECK_HOURS, null)?.let { raw ->
+                return parse(raw).filter { it in 0..23 }.map { it * 60 }.toSortedSet()
+            }
+            return setOf(6 * 60, 18 * 60)
+        }
         set(value) {
-            plainPrefs.edit().putString(KEY_FIXED_CHECK_HOURS, value.filter { it in 0..23 }.toSortedSet().joinToString(",")).apply()
+            plainPrefs.edit()
+                .putString(KEY_FIXED_CHECK_SLOTS, value.filter { it in 0..1439 }.toSortedSet().joinToString(","))
+                .apply()
         }
 
-    /** The hours that should actually have an alarm: empty unless the feature is on. */
-    val activeFixedCheckHours: Set<Int>
-        get() = if (notificationsEnabled && fixedCheckTimesEnabled) fixedCheckHours else emptySet()
+    /** The times that should actually have an alarm: empty unless the feature is on. */
+    val activeFixedCheckSlots: Set<Int>
+        get() = if (notificationsEnabled && fixedCheckTimesEnabled) fixedCheckSlots else emptySet()
 
     /** Per-category opt-out inside the master switch above (Settings → Benachrichtigungen).
      *  Everything defaults to ON. The same categories also exist as separate Android
@@ -598,9 +608,24 @@ class SessionManager @Inject constructor(
         get() = plainPrefs.getInt(KEY_CACHE_TTL, DEFAULT_CACHE_TTL)
         set(value) { plainPrefs.edit().putInt(KEY_CACHE_TTL, value.coerceIn(MIN_CACHE_TTL, MAX_CACHE_TTL)).apply() }
 
+    /**
+     * Marks every cached data set as OUTDATED without deleting any of it: entries fetched before
+     * this moment count as stale ([isCacheFresh] = false) so the next load refetches, but they stay
+     * available as "last known content" until the fresh data arrives and replaces them. Use this
+     * instead of wiping caches — a wiped cache leaves the screens with nothing to show while (or
+     * if) the refresh runs/fails.
+     */
+    fun invalidateDataCaches() { dataInvalidatedAtMs = System.currentTimeMillis() }
+
+    private var dataInvalidatedAtMs: Long
+        get() = plainPrefs.getLong(KEY_DATA_INVALIDATED_AT, 0L)
+        set(value) { plainPrefs.edit().putLong(KEY_DATA_INVALIDATED_AT, value).apply() }
+
     fun isCacheFresh(lastFetchMs: Long): Boolean {
         val ttl = cacheTtlMinutes
-        return !(ttl == 0 || lastFetchMs == 0L) && (System.currentTimeMillis() - lastFetchMs) < ttl * 60_000L
+        return !(ttl == 0 || lastFetchMs == 0L) &&
+            lastFetchMs > dataInvalidatedAtMs &&
+            (System.currentTimeMillis() - lastFetchMs) < ttl * 60_000L
     }
 
     // ── Export / Import ───────────────────────────────────────────────────────
@@ -756,7 +781,7 @@ class SessionManager @Inject constructor(
             obj.get("useCompactWeekView")?.asBoolean?.let { useCompactWeekView = it }
             obj.get("notificationsEnabled")?.asBoolean?.let { enabled ->
                 notificationsEnabled = enabled
-                if (enabled) NotificationScheduler.start(context, activeFixedCheckHours) else NotificationScheduler.stop(context)
+                if (enabled) NotificationScheduler.start(context, activeFixedCheckSlots) else NotificationScheduler.stop(context)
             }
             obj.getAsJsonObject("notificationCategories")?.let { cats ->
                 NotificationCategory.values().forEach { c ->
@@ -854,7 +879,9 @@ class SessionManager @Inject constructor(
         private const val KEY_COMBINED_OVERLAY_RULE     = "combined_overlay_rule"
         private const val KEY_NOTIFICATIONS_ENABLED  = "notifications_enabled"
         private const val KEY_FIXED_CHECK_TIMES      = "fixed_check_times_enabled"
-        private const val KEY_FIXED_CHECK_HOURS      = "fixed_check_hours"
+        private const val KEY_FIXED_CHECK_HOURS      = "fixed_check_hours"   // legacy: full hours
+        private const val KEY_FIXED_CHECK_SLOTS      = "fixed_check_slots"   // minutes since midnight
+        private const val KEY_DATA_INVALIDATED_AT   = "data_invalidated_at"
         private const val KEY_NOTIF_CATEGORY_PREFIX  = "notif_category_"
         private const val KEY_LAST_NOTIFIED_SNAPSHOT = "last_notified_snapshot"
         private const val KEY_CHANGES_LAST_VIEWED_AT = "changes_last_viewed_at"

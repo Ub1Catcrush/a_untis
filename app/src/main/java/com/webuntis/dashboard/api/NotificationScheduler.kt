@@ -34,9 +34,9 @@ object NotificationScheduler {
     private const val ALARM_REQUEST_CODE = 6180
     const val ACTION_FIXED_CHECK = "com.webuntis.dashboard.action.FIXED_CHECK"
 
-    /** [fixedHours]: full hours (0..23) for the fixed-time check; empty = none. */
-    fun start(context: Context, fixedHours: Set<Int>) {
-        scheduleFixedSlot(context, fixedHours)
+    /** [fixedSlots]: minutes since midnight for the fixed-time check; empty = none. */
+    fun start(context: Context, fixedSlots: Set<Int>) {
+        scheduleFixedSlot(context, fixedSlots)
         val request = PeriodicWorkRequestBuilder<PlanChangeCheckWorker>(15, TimeUnit.MINUTES)
             .setConstraints(
                 Constraints.Builder()
@@ -54,11 +54,11 @@ object NotificationScheduler {
         cancelFixedSlot(context)
     }
 
-    /** Milliseconds from [now] to the next full hour in [hours] (local time). [hours] must not be empty. */
-    internal fun delayToNextFixedSlotMs(hours: Set<Int>, now: ZonedDateTime = ZonedDateTime.now()): Long {
+    /** Milliseconds from [now] to the next time in [slots] (minutes since midnight, local time). [slots] must not be empty. */
+    internal fun delayToNextFixedSlotMs(slots: Set<Int>, now: ZonedDateTime = ZonedDateTime.now()): Long {
         val next = (0..1).flatMap { dayOffset ->
-            hours.sorted().map { h -> now.toLocalDate().plusDays(dayOffset.toLong()).atTime(LocalTime.of(h, 0)).atZone(now.zone) }
-        }.first { it.isAfter(now.plusMinutes(1)) }
+            slots.sorted().map { m -> now.toLocalDate().plusDays(dayOffset.toLong()).atTime(LocalTime.of(m / 60, m % 60)).atZone(now.zone) }
+        }.first { it.isAfter(now.plusSeconds(30)) }
         return Duration.between(now, next).toMillis()
     }
 
@@ -83,18 +83,18 @@ object NotificationScheduler {
     )
 
     /**
-     * Arms ONE alarm for the next of the chosen [hours] (local time, 1–24 slots per day; only the
-     * next one is armed at a time). An empty set cancels the alarm. [FixedCheckAlarmReceiver] re-arms
+     * Arms ONE alarm for the next of the chosen [slots] (local time, any number of times per day
+     * on a 15-minute grid; only the next one is armed at a time). An empty set cancels the alarm. [FixedCheckAlarmReceiver] re-arms
      * the following slot each time it fires and after boot / time or time-zone change / app
      * update. Uses an exact, Doze-proof alarm when the user allowed it; otherwise falls back to
      * an inexact (but still Doze-allowed) alarm so the check still happens, just not to the minute.
      * Idempotent: re-arming replaces the pending alarm.
      */
-    fun scheduleFixedSlot(context: Context, hours: Set<Int>) {
-        if (hours.isEmpty()) { cancelFixedSlot(context); return }
+    fun scheduleFixedSlot(context: Context, slots: Set<Int>) {
+        if (slots.isEmpty()) { cancelFixedSlot(context); return }
         WorkManager.getInstance(context).cancelUniqueWork(LEGACY_FIXED_WORK_NAME)
         val am = context.getSystemService(AlarmManager::class.java)
-        val triggerAt = System.currentTimeMillis() + delayToNextFixedSlotMs(hours)
+        val triggerAt = System.currentTimeMillis() + delayToNextFixedSlotMs(slots)
         val pi = alarmPendingIntent(context)
         try {
             if (canScheduleExactAlarms(context)) {

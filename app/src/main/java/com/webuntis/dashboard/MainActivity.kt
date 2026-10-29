@@ -305,6 +305,7 @@ class MainActivity : AppCompatActivity() {
         const val TARGET_MESSAGES  = "messages"
         const val TARGET_HOMEWORK  = "homework"
         const val TARGET_CLASSBOOK = "classbook"
+        const val TARGET_EVENTS    = "events"
 
         /** Longest the start waits for the update check before just continuing. */
         private const val UPDATE_CHECK_TIMEOUT_MS = 5_000L
@@ -352,6 +353,7 @@ class MainActivity : AppCompatActivity() {
         val destination = when (target) {
             TARGET_MESSAGES  -> R.id.messagesFragment
             TARGET_HOMEWORK  -> R.id.homeworkFragment
+            TARGET_EVENTS    -> R.id.eventsFragment
             else             -> R.id.classbookFragment
         }
         if (current != destination) navController.navigate(destination)

@@ -287,8 +287,8 @@ class MessagesViewModel @Inject constructor(
             ).fold(
                 onSuccess = {
                     _composeState.value = ComposeState.Sent
-                    // The lists changed server-side: drop the stale copies instead of showing them.
-                    _inboxState.value = UiState.Loading; _sentState.value = UiState.Loading
+                    // The lists changed server-side: keep showing them and swap in the fresh
+                    // copies when the refresh is done (no spinner / empty list in between).
                     loadInbox(true); loadSent(true)
                 },
                 onFailure = { _composeState.value = ComposeState.Error(it.message ?: "Senden fehlgeschlagen") }
@@ -315,7 +315,6 @@ class MessagesViewModel @Inject constructor(
                 onSuccess = {
                     _composeState.value = ComposeState.Saved
                     clearAttachments()
-                    _draftsState.value = UiState.Loading
                     loadDrafts(true)
                 },
                 onFailure = { _composeState.value = ComposeState.Error(it.message ?: "Speichern fehlgeschlagen") }
@@ -325,13 +324,19 @@ class MessagesViewModel @Inject constructor(
 
     // ── Delete ─────────────────────────────────────────────────────────────────
 
+    private fun removeFromList(state: kotlinx.coroutines.flow.MutableStateFlow<UiState<List<Message>>>, msg: Message) {
+        val current = state.value
+        if (current is UiState.Success) state.value = UiState.Success(current.data.filter { it.id != msg.id })
+    }
+
     fun deleteMessage(msg: Message) {
         viewModelScope.launch {
             repository.deleteMessage(msg).onSuccess {
                 when {
-                    msg.isDraft -> { _draftsState.value = UiState.Loading; loadDrafts(true) }
-                    msg.isSent  -> { _sentState.value   = UiState.Loading; loadSent(true) }
-                    else        -> { _inboxState.value  = UiState.Loading; loadInbox(true) }
+                    // Take the message out of the visible list at once, then refresh silently.
+                    msg.isDraft -> { removeFromList(_draftsState, msg); loadDrafts(true) }
+                    msg.isSent  -> { removeFromList(_sentState, msg);   loadSent(true) }
+                    else        -> { removeFromList(_inboxState, msg);  loadInbox(true) }
                 }
             }
         }

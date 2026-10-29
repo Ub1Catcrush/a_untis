@@ -65,7 +65,9 @@ class ClassbookViewModel @Inject constructor(
             try {
                 if (contextChanged || _state.value !is UiState.Success) {
                     val cached = repository.peekClassbookEntries()
-                    _state.value = if (cached != null) UiState.Success(cached) else UiState.Loading
+                    // An EMPTY cache says nothing yet (e.g. everything cached is older than the window): keep the
+                    // spinner until the refresh answers instead of flashing the "nothing here" state.
+                    _state.value = if (!cached.isNullOrEmpty()) UiState.Success(cached) else UiState.Loading
                 }
                 repository.getClassbookEntries(forceRefresh).fold(
                     onSuccess = { _state.value = UiState.Success(it) },

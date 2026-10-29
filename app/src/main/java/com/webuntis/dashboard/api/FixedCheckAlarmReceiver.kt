@@ -18,13 +18,13 @@ class FixedCheckAlarmReceiver : BroadcastReceiver() {
     @Inject lateinit var sessionManager: SessionManager
 
     override fun onReceive(context: Context, intent: Intent) {
-        val hours = sessionManager.activeFixedCheckHours
-        if (hours.isEmpty()) {
+        val slots = sessionManager.activeFixedCheckSlots
+        if (slots.isEmpty()) {
             NotificationScheduler.cancelFixedSlot(context)
             return
         }
         // Re-arm first so the next slot is safe even if the check below fails.
-        NotificationScheduler.scheduleFixedSlot(context, hours)
+        NotificationScheduler.scheduleFixedSlot(context, slots)
         if (intent.action == NotificationScheduler.ACTION_FIXED_CHECK) {
             NotificationScheduler.runFixedCheck(context)
         }

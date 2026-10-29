@@ -18,7 +18,7 @@ import javax.inject.Singleton
 
 /** The independently switchable notification categories. Each one maps to its own Android
  *  notification channel (system settings) AND its own switch in the app's settings. */
-enum class NotificationCategory { CANCELLATIONS, SUBSTITUTIONS, ROOM_CHANGES, MESSAGES, HOMEWORK, CLASSBOOK }
+enum class NotificationCategory { CANCELLATIONS, SUBSTITUTIONS, ROOM_CHANGES, MESSAGES, HOMEWORK, CLASSBOOK, EVENTS }
 
 /**
  * Posts the local notifications shown by [PlanChangeCheckWorker] (cancellations,
@@ -37,6 +37,7 @@ class NotificationHelper @Inject constructor(
         const val CHANNEL_MESSAGES      = "channel_new_messages"
         const val CHANNEL_HOMEWORK      = "channel_new_homework"
         const val CHANNEL_CLASSBOOK     = "channel_new_classbook"
+        const val CHANNEL_EVENTS        = "channel_new_events"
         private const val GROUP_TIMETABLE = "group_timetable"
 
         /** Pre-split channel that held every timetable change; removed in [ensureChannels]. */
@@ -48,6 +49,7 @@ class NotificationHelper @Inject constructor(
         private const val ID_MESSAGES      = 20_000
         private const val ID_HOMEWORK      = 20_001
         private const val ID_CLASSBOOK     = 20_002
+        private const val ID_EVENTS        = 20_003
         private const val REQUEST_OPEN_BASE = 30_000
     }
 
@@ -98,7 +100,12 @@ class NotificationHelper @Inject constructor(
                     CHANNEL_CLASSBOOK,
                     context.getString(R.string.notif_channel_classbook),
                     NotificationManager.IMPORTANCE_LOW
-                ).apply { description = context.getString(R.string.notif_channel_classbook_desc) }
+                ).apply { description = context.getString(R.string.notif_channel_classbook_desc) },
+                NotificationChannel(
+                    CHANNEL_EVENTS,
+                    context.getString(R.string.notif_channel_events),
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply { description = context.getString(R.string.notif_channel_events_desc) }
             )
         )
     }
@@ -133,6 +140,7 @@ class NotificationHelper @Inject constructor(
             MainActivity.TARGET_MESSAGES  -> 1
             MainActivity.TARGET_HOMEWORK  -> 2
             MainActivity.TARGET_CLASSBOOK -> 3
+            MainActivity.TARGET_EVENTS    -> 4
             else                          -> 0
         }
         return PendingIntent.getActivity(
@@ -270,5 +278,21 @@ class NotificationHelper @Inject constructor(
             .setContentIntent(openIntent(MainActivity.TARGET_CLASSBOOK))
             .build()
         notify(ID_CLASSBOOK, notification)
+    }
+
+    /** New announced events / exams ("Termine"): the title for a single one, else a count. */
+    fun notifyNewEvents(count: Int, singleTitle: String?, singleDetail: String?) {
+        val text = if (count == 1 && !singleTitle.isNullOrBlank())
+            listOfNotNull(singleTitle, singleDetail?.takeIf { it.isNotBlank() }).joinToString(" · ")
+        else context.resources.getQuantityString(R.plurals.notif_events_summary, count, count)
+        val notification = NotificationCompat.Builder(context, CHANNEL_EVENTS)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(context.getString(R.string.notif_events_title))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(openIntent(MainActivity.TARGET_EVENTS))
+            .build()
+        notify(ID_EVENTS, notification)
     }
 }

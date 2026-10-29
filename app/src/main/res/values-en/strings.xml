@@ -324,7 +324,7 @@
     <string name="settings_section_notifications">Notifications</string>
     <string name="settings_notifications_enabled">Notify me about schedule changes</string>
     <string name="settings_fixed_check_times">Also check at fixed times</string>
-    <string name="settings_fixed_check_times_desc">A fixed check at freely chosen full hours (default 6:00 and 18:00), even if the regular check is throttled by the system. Uses exact alarms.</string>
+    <string name="settings_fixed_check_times_desc">A fixed check at freely chosen times in 15-minute steps (default 6:00 and 18:00), even if the regular check is throttled by the system. Uses exact alarms.</string>
     <string name="settings_fixed_hours_title">Choose check times</string>
     <string name="settings_fixed_hours_summary">Times: %1$s – tap to change</string>
     <string name="settings_fixed_hours_none">No time selected – tap to choose</string>
@@ -337,6 +337,7 @@
     <string name="settings_notif_room_changes">Room changes</string>
     <string name="settings_notif_messages">New messages</string>
     <string name="settings_notif_homework">New homework</string>
+    <string name="settings_notif_events">New events</string>
     <string name="settings_notif_classbook">New classbook entries</string>
     <string name="settings_notifications_system_btn">Channels in system settings</string>
     <string name="settings_notifications_system_desc">Each category is also its own Android notification channel and can be muted or tuned separately there.</string>
@@ -369,6 +370,9 @@
     <string name="notif_channel_messages_desc">New messages in your inbox</string>
     <string name="notif_channel_homework">New homework</string>
     <string name="notif_channel_homework_desc">Newly assigned homework</string>
+    <string name="notif_channel_events">New events</string>
+    <string name="notif_channel_events_desc">Newly announced events and exams</string>
+    <string name="notif_events_title">New event</string>
     <string name="notif_channel_classbook">New classbook entries</string>
     <string name="notif_channel_classbook_desc">New entries in the classbook</string>
     <string name="notif_messages_title">New message</string>
@@ -398,6 +402,10 @@
     <plurals name="notif_homework_summary">
         <item quantity="one">%d new homework item</item>
         <item quantity="other">%d new homework items</item>
+    </plurals>
+    <plurals name="notif_events_summary">
+        <item quantity="one">%d new event</item>
+        <item quantity="other">%d new events</item>
     </plurals>
     <plurals name="notif_classbook_summary">
         <item quantity="one">%d new entry</item>

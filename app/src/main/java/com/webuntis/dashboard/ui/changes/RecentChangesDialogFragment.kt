@@ -140,6 +140,7 @@ class RecentChangesDialogFragment : DialogFragment() {
                     "messages"  -> R.drawable.ic_message
                     "homework"  -> R.drawable.ic_homework
                     "classbook" -> R.drawable.ic_book
+                    "events"    -> R.drawable.ic_event
                     else        -> R.drawable.ic_calendar
                 }
             )

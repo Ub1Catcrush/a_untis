@@ -327,7 +327,7 @@
     <string name="settings_section_notifications">Benachrichtigungen</string>
     <string name="settings_notifications_enabled">Bei Planänderungen benachrichtigen</string>
     <string name="settings_fixed_check_times">Zusätzlich zu festen Uhrzeiten prüfen</string>
-    <string name="settings_fixed_check_times_desc">Feste Prüfungen zu frei wählbaren vollen Stunden (Standard 6:00 und 18:00), auch wenn die regelmäßige Prüfung vom System gebremst wird. Läuft über exakte Wecker.</string>
+    <string name="settings_fixed_check_times_desc">Feste Prüfungen zu frei wählbaren Uhrzeiten im 15-Minuten-Raster (Standard 6:00 und 18:00), auch wenn die regelmäßige Prüfung vom System gebremst wird. Läuft über exakte Wecker.</string>
     <string name="settings_fixed_hours_title">Prüfzeiten wählen</string>
     <string name="settings_fixed_hours_summary">Uhrzeiten: %1$s – tippen zum Ändern</string>
     <string name="settings_fixed_hours_none">Keine Uhrzeit gewählt – tippen zum Auswählen</string>
@@ -340,6 +340,7 @@
     <string name="settings_notif_room_changes">Raumänderungen</string>
     <string name="settings_notif_messages">Neue Nachrichten</string>
     <string name="settings_notif_homework">Neue Hausaufgaben</string>
+    <string name="settings_notif_events">Neue Termine</string>
     <string name="settings_notif_classbook">Neue Klassenbucheinträge</string>
     <string name="settings_notifications_system_btn">Kanäle in den Systemeinstellungen</string>
     <string name="settings_notifications_system_desc">Jede Kategorie ist auch ein eigener Android-Benachrichtigungskanal und kann dort getrennt stumm geschaltet oder angepasst werden.</string>
@@ -372,6 +373,9 @@
     <string name="notif_channel_messages_desc">Neue Nachrichten im Postfach</string>
     <string name="notif_channel_homework">Neue Hausaufgaben</string>
     <string name="notif_channel_homework_desc">Neu eingetragene Hausaufgaben</string>
+    <string name="notif_channel_events">Neue Termine</string>
+    <string name="notif_channel_events_desc">Neu angekündigte Termine und Prüfungen</string>
+    <string name="notif_events_title">Neuer Termin</string>
     <string name="notif_channel_classbook">Neue Klassenbucheinträge</string>
     <string name="notif_channel_classbook_desc">Neue Einträge im Klassenbuch</string>
     <string name="notif_messages_title">Neue Nachricht</string>
@@ -401,6 +405,10 @@
     <plurals name="notif_homework_summary">
         <item quantity="one">%d neue Hausaufgabe</item>
         <item quantity="other">%d neue Hausaufgaben</item>
+    </plurals>
+    <plurals name="notif_events_summary">
+        <item quantity="one">%d neuer Termin</item>
+        <item quantity="other">%d neue Termine</item>
     </plurals>
     <plurals name="notif_classbook_summary">
         <item quantity="one">%d neuer Eintrag</item>

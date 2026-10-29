@@ -610,6 +610,15 @@
                         android:text="@string/settings_notif_classbook"
                         android:textAppearance="?attr/textAppearanceBodyMedium" />
 
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_notif_events"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="44dp"
+                        android:paddingVertical="2dp"
+                        android:text="@string/settings_notif_events"
+                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

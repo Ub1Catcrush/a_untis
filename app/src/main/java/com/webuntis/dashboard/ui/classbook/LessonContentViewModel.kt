@@ -86,7 +86,9 @@ class LessonContentViewModel @Inject constructor(
                 if (contextChanged || _state.value !is UiState.Success) {
                     if (contextChanged) { lastEntryCount = -1; lastLessons = emptyList(); _canLoadMore.value = true }
                     val cached = repository.peekTeachingContentEntries(_windowDays.value)
-                    if (cached != null) {
+                    // An EMPTY cache says nothing yet (everything cached may be older than the window):
+                    // keep the spinner until the refresh answers instead of flashing "no content".
+                    if (!cached.isNullOrEmpty()) {
                         // Deliberately leaves lastEntryCount/canLoadMore alone: a cached list
                         // says nothing about whether widening the window finds more.
                         lastLessons = cached

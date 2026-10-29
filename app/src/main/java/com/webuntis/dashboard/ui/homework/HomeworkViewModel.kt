@@ -119,7 +119,9 @@ class HomeworkViewModel @Inject constructor(
             try {
                 if (contextChanged || _state.value !is UiState.Success) {
                     val cached = repository.peekHomework()
-                    _state.value = if (cached != null) {
+                    // An EMPTY cache says nothing yet (e.g. everything cached is older than the window): keep the
+                    // spinner until the refresh answers instead of flashing the "nothing here" state.
+                    _state.value = if (cached != null && cached.first.isNotEmpty()) {
                         val catalog = repository.peekNameCatalog() ?: com.webuntis.dashboard.model.NameCatalog()
                         UiState.Success(buildItems(cached, catalog))
                     } else UiState.Loading

@@ -47,7 +47,7 @@ class SettingsFragment : Fragment() {
     ) { granted ->
         if (granted) {
             loginViewModel.sessionManager.notificationsEnabled = true
-            com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.activeFixedCheckHours)
+            com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.activeFixedCheckSlots)
             updateBatteryOptimizationUi()
             updateNotificationCategoriesEnabled()
             if (loginViewModel.sessionManager.fixedCheckTimesEnabled) requestExactAlarmPermission()
@@ -169,7 +169,7 @@ class SettingsFragment : Fragment() {
                 // flip sessionManager's flag until we actually know the outcome.
             } else {
                 loginViewModel.sessionManager.notificationsEnabled = true
-                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.activeFixedCheckHours)
+                com.webuntis.dashboard.api.NotificationScheduler.start(requireContext(), loginViewModel.sessionManager.activeFixedCheckSlots)
                 updateBatteryOptimizationUi()
                 updateNotificationCategoriesEnabled()
                 if (loginViewModel.sessionManager.fixedCheckTimesEnabled) requestExactAlarmPermission()
@@ -182,7 +182,7 @@ class SettingsFragment : Fragment() {
             loginViewModel.sessionManager.fixedCheckTimesEnabled = checked
             if (loginViewModel.sessionManager.notificationsEnabled) {
                 if (checked) {
-                    com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), loginViewModel.sessionManager.fixedCheckHours)
+                    com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), loginViewModel.sessionManager.fixedCheckSlots)
                     requestExactAlarmPermission()
                 } else {
                     com.webuntis.dashboard.api.NotificationScheduler.cancelFixedSlot(requireContext())
@@ -338,7 +338,8 @@ class SettingsFragment : Fragment() {
         NotificationCategory.ROOM_CHANGES  to binding.switchNotifRoomChanges,
         NotificationCategory.MESSAGES      to binding.switchNotifMessages,
         NotificationCategory.HOMEWORK      to binding.switchNotifHomework,
-        NotificationCategory.CLASSBOOK     to binding.switchNotifClassbook
+        NotificationCategory.CLASSBOOK     to binding.switchNotifClassbook,
+        NotificationCategory.EVENTS        to binding.switchNotifEvents
     )
 
     private fun bindNotificationCategories() {
@@ -702,26 +703,28 @@ class SettingsFragment : Fragment() {
 
     private fun updateFixedHoursUi() {
         val sm = loginViewModel.sessionManager
-        val hours = sm.fixedCheckHours
+        val slots = sm.fixedCheckSlots
         binding.textFixedCheckHours.text =
-            if (hours.isEmpty()) getString(R.string.settings_fixed_hours_none)
-            else getString(R.string.settings_fixed_hours_summary, hours.joinToString(", ") { "%02d:00".format(it) })
+            if (slots.isEmpty()) getString(R.string.settings_fixed_hours_none)
+            else getString(R.string.settings_fixed_hours_summary, slots.joinToString(", ") { "%02d:%02d".format(it / 60, it % 60) })
         binding.textFixedCheckHours.isEnabled = sm.fixedCheckTimesEnabled
         binding.textFixedCheckHours.alpha = if (sm.fixedCheckTimesEnabled) 1f else 0.5f
     }
 
-    /** Lets the user pick any of the 24 full hours; the next alarm is re-armed on confirm. */
+    /** Lets the user pick any times on a 15-minute grid (96 per day); re-arms the next alarm on confirm. */
     private fun showFixedHoursDialog() {
         val sm = loginViewModel.sessionManager
-        val current = sm.fixedCheckHours
-        val labels = Array(24) { "%02d:00".format(it) }
-        val checked = BooleanArray(24) { it in current }
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+        val current = sm.fixedCheckSlots
+        val slotMinutes = IntArray(96) { it * 15 }
+        val labels = Array(96) { "%02d:%02d".format(slotMinutes[it] / 60, slotMinutes[it] % 60) }
+        val checked = BooleanArray(96) { slotMinutes[it] in current }
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.settings_fixed_hours_title)
             .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                val chosen = (0..23).filter { checked[it] }.toSet()
-                sm.fixedCheckHours = chosen
+                // Times set earlier that aren't on the grid are kept; only grid times are edited here.
+                val chosen = (current.filter { it % 15 != 0 } + slotMinutes.filterIndexed { i, _ -> checked[i] }).toSortedSet()
+                sm.fixedCheckSlots = chosen
                 if (sm.notificationsEnabled && sm.fixedCheckTimesEnabled) {
                     com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), chosen)
                     if (chosen.isNotEmpty()) requestExactAlarmPermission()
@@ -731,6 +734,9 @@ class SettingsFragment : Fragment() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+        // 96 rows: start at the first selected time instead of at 00:00.
+        val first = checked.indexOfFirst { it }
+        if (first > 0) dialog.listView.post { dialog.listView.setSelection(maxOf(first - 1, 0)) }
     }
 
     /** Opens the system screen to allow exact alarms (Android 12+), if not yet allowed. */
@@ -864,7 +870,7 @@ class SettingsFragment : Fragment() {
             updateBatteryOptimizationUi()
             // Back from the system "alarms & reminders" screen: arm with the new permission state.
             if (loginViewModel.sessionManager.notificationsEnabled && loginViewModel.sessionManager.fixedCheckTimesEnabled) {
-                com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), loginViewModel.sessionManager.fixedCheckHours)
+                com.webuntis.dashboard.api.NotificationScheduler.scheduleFixedSlot(requireContext(), loginViewModel.sessionManager.fixedCheckSlots)
             }
             updateExactAlarmUi()
         }

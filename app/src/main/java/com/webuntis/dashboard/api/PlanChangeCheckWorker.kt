@@ -9,6 +9,7 @@ import com.google.gson.Gson
 import com.webuntis.dashboard.R
 import com.webuntis.dashboard.model.Lesson
 import com.webuntis.dashboard.model.Message
+import com.webuntis.dashboard.model.SchoolEvent
 import com.webuntis.dashboard.model.periodNumberFor
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -87,6 +88,9 @@ class PlanChangeCheckWorker @AssistedInject constructor(
             persist(snapshot)
 
             snapshot = checkClassbook(snapshot, isFirstRun)
+            persist(snapshot)
+
+            snapshot = checkEvents(snapshot)
             persist(snapshot)
 
             Log.i(tag, "Check complete: ${snapshot.lessonStatus.size} lessons/${snapshot.messageIds.size} messages/" +
@@ -410,6 +414,43 @@ class PlanChangeCheckWorker @AssistedInject constructor(
             }
         )
         return result
+    }
+
+    /**
+     * New announced events / exams ("Termine"). An event only carries the date it takes place on,
+     * not when it was announced, so "new" is decided purely by id-diff against the last check.
+     * The very first check (no [ChangeSnapshot.eventIds] yet) just records the baseline silently —
+     * every already-known event would otherwise be reported as new.
+     */
+    private suspend fun checkEvents(baseline: ChangeSnapshot): ChangeSnapshot {
+        val fetched = repository.getEvents(forceRefresh = true)
+        val events = fetched.getOrNull()
+        if (events == null) {
+            Log.w(tag, "checkEvents: fetch failed, keeping previous baseline — ${fetched.exceptionOrNull()}")
+            return baseline
+        }
+        val currentIds = events.map { it.id }.toSet()
+        val known = baseline.eventIds
+        val result = baseline.copy(eventIds = currentIds)
+        if (known == null) {
+            Log.i(tag, "checkEvents: baseline established (${events.size} events), no notification")
+            return result
+        }
+        val newOnes = events.filter { it.id !in known }.filter { baseline.isFresh("event:${it.id}") }
+        Log.i(tag, "checkEvents: ${events.size} fetched, ${newOnes.size} to notify")
+        if (newOnes.isEmpty() || !sessionManager.isNotificationCategoryEnabled(NotificationCategory.EVENTS)) return result
+
+        fun detail(e: SchoolEvent): String {
+            val day  = e.date?.let { untisDateLabel(it) }
+            val time = e.startTime?.takeIf { it > 0 }?.let { untisTimeLabel(it) }
+            return listOfNotNull(day, time).joinToString(" ")
+        }
+        notificationHelper.notifyNewEvents(newOnes.size, newOnes.singleOrNull()?.displayTitle, newOnes.singleOrNull()?.let(::detail))
+        val now = System.currentTimeMillis()
+        return result.withNotified(
+            newOnes.map { "event:${it.id}" },
+            newOnes.map { ChangeLogEntry("events", it.displayTitle, detail(it), now) }
+        )
     }
 
     /** True for a "yyyy-MM-dd..." / ISO timestamp within the recency window (see [RECENT_WINDOW_DAYS]). */

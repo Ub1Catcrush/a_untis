@@ -26,6 +26,10 @@ data class ChangeSnapshot(
     val messageIds: Set<Int> = emptySet(),
     val homeworkIds: Set<Int> = emptySet(),
     val classbookIds: Set<Int> = emptySet(),
+    // Upcoming events/exams seen at the last check. null = no baseline yet (snapshot written by
+    // an older app version, or first check): the next check only records them, it does not
+    // notify — otherwise every already-known event would be reported as "new".
+    val eventIds: Set<Int>? = null,
     // Dedup ledger: notification key -> epoch millis when we last notified about it.
     val notifiedAt: Map<String, Long> = emptyMap(),
     // Human-readable log for the in-app "what's new" dialog, newest first.
