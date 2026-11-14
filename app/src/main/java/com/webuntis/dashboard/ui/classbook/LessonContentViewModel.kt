@@ -69,6 +69,15 @@ class LessonContentViewModel @Inject constructor(
         load(revalidate = true)
         viewModelScope.launch { appForegroundEvents.onForegroundResume.collect { load(revalidate = true) } }
         viewModelScope.launch { activeAccountManager.current.drop(1).collect { load(contextChanged = true) } }
+        // A timetable refresh may bring new content: re-read the cache, no network involved.
+        viewModelScope.launch { repository.teachingContentChanged.collect { reloadFromCache() } }
+    }
+
+    private suspend fun reloadFromCache() {
+        val cached = repository.peekTeachingContentEntries(_windowDays.value)
+        if (cached.isNullOrEmpty() || cached == lastLessons) return
+        lastLessons = cached
+        _state.value = UiState.Success(group(cached, _groupMode.value))
     }
 
     /**

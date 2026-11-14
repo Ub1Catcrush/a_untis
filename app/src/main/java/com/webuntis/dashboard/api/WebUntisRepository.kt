@@ -349,6 +349,12 @@ class WebUntisRepository @Inject constructor(
     private val cacheTeachingContentByAccount: MutableMap<String, TeachingContentCache> = mutableMapOf()
     private val teachingContentMutex = Mutex()
 
+    private val _teachingContentChanged = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
+    /** Emits whenever the Unterrichtsinhalte cache gained/changed entries without the tab itself
+     *  having loaded (e.g. a timetable refresh brought new content) — the open tab re-reads it. */
+    val teachingContentChanged: kotlinx.coroutines.flow.SharedFlow<Unit> = _teachingContentChanged
+
     /** What the "Unterrichtsinhalte" tab has loaded so far: only lessons that actually carry a
      *  teaching content text, the number of days back from today they cover, and when the
      *  cache was last refreshed from the server. Mirrored to disk like the other caches. */
@@ -1097,6 +1103,7 @@ class WebUntisRepository @Inject constructor(
         val rangeResult = fetchLessonsInRange(today.toUntis(), today.plusDays(fetchDays).toUntis(),
             strictOverlay = haveGoodData, modeSnapshot = modeSnap, ruleSnapshot = ruleSnap)
         if (rangeResult.isFailure) return@withCacheOrFetch Result.failure(rangeResult.exceptionOrNull()!!)
+        feedTeachingCache(rangeResult.getOrThrow())
         val byDate = rangeResult.getOrThrow()
             .groupBy { it.date }.entries
             .filter { (d, _) -> !untisIntToDate(d).isBefore(today) && untisIntToDate(d).dayOfWeek.value <= 5 }
@@ -1139,6 +1146,7 @@ class WebUntisRepository @Inject constructor(
         val rangeEnd = anchorDate.plusDays((numDays.toLong() * 2) + 14)
         val rangeResult = fetchLessonsInRange(windowStart.toUntis(), windowEnd.toUntis(), anchorDate, maxEnrich, rangeEnd)
         if (rangeResult.isFailure) return Result.failure(rangeResult.exceptionOrNull()!!)
+        feedTeachingCache(rangeResult.getOrThrow())
 
         val allSchoolDays = rangeResult.getOrThrow()
             .groupBy { it.date }.entries
@@ -1643,6 +1651,38 @@ class WebUntisRepository @Inject constructor(
         return loaded.second.also { cacheTeachingContentByAccount[scope] = it }
     }
 
+    /**
+     * The timetable fetches already detail-enrich every lesson, so they know the teaching content
+     * of today's and any browsed past days. Feed that into the Unterrichtsinhalte cache (only
+     * what falls into the days it already covers, and only if it differs) instead of leaving the
+     * tab to find out on its own — otherwise content you can see in the timetable wasn't in the
+     * tab until a manual reload. Runs in the background; never delays the timetable result.
+     */
+    private fun feedTeachingCache(lessons: List<Lesson>) {
+        val today = LocalDate.now()
+        val withContent = lessons.filter { l ->
+            !l.teachingContent.isNullOrBlank() && l.localDate?.let { !it.isAfter(today) } == true
+        }
+        if (withContent.isEmpty()) return
+        persistScope.launch {
+            teachingContentMutex.withLock {
+                val cache = loadTeachingCache() ?: return@withLock   // tab never loaded: nothing to extend
+                val cutoff = today.minusDays((cache.days - 1).toLong().coerceAtLeast(0))
+                val known = cache.entries.associateBy { it.id }
+                val changed = withContent.filter { l ->
+                    l.localDate?.isBefore(cutoff) == false && known[l.id]?.teachingContent != l.teachingContent
+                }
+                if (changed.isEmpty()) return@withLock
+                val changedIds = changed.map { it.id }.toSet()
+                val updated = cache.copy(entries = (cache.entries.filter { it.id !in changedIds } + changed).distinctBy { it.id })
+                cacheTeachingContentByAccount[currentAccountScope()] = updated
+                val p = teachingPersist()
+                withContext(Dispatchers.IO) { diskCache.write(p.key, updated.fetchedAt, updated) }
+                _teachingContentChanged.tryEmit(Unit)
+            }
+        }
+    }
+
     private fun filterTeachingContent(entries: List<Lesson>, days: Int, today: LocalDate): List<Lesson> {
         val cutoff = today.minusDays((days - 1).toLong())
         return entries.filter { lesson ->
@@ -1718,7 +1758,7 @@ class WebUntisRepository @Inject constructor(
                 val recentStart = today.minusDays((recent - 1).toLong())
                 val res = fetchLessonsInRange(
                     recentStart.toUntis(), today.toUntis(), anchorDate = today,
-                    maxEnrich = (recent * 8).coerceIn(40, 400)
+                    maxEnrich = (recent * 16).coerceIn(80, 400)
                 )
                 res.getOrNull()?.let { fresh ->
                     val freshWithContent = fresh.filter { !it.teachingContent.isNullOrBlank() }
