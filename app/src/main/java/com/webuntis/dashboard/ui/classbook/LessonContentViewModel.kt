@@ -24,6 +24,9 @@ import javax.inject.Inject
  */
 data class ContentGroup(val header: String, val entries: List<Lesson>)
 
+/** One selectable subject in the filter: [key] is stable (short subject name), [label] follows the name settings. */
+data class SubjectOption(val key: String, val label: String)
+
 @HiltViewModel
 class LessonContentViewModel @Inject constructor(
     private val repository: WebUntisRepository,
@@ -59,6 +62,34 @@ class LessonContentViewModel @Inject constructor(
      *  re-grouping of already-loaded data — no network call needed. */
     private var lastLessons: List<Lesson> = emptyList()
 
+    /** Subjects selected in the filter (by [subjectKey]); empty = no filter, show everything. */
+    private val _subjectFilter = MutableStateFlow<Set<String>>(emptySet())
+    val subjectFilter: StateFlow<Set<String>> = _subjectFilter
+
+    /** Subjects present in the loaded lessons — the choices of the filter dialog. */
+    private val _subjects = MutableStateFlow<List<SubjectOption>>(emptyList())
+    val subjects: StateFlow<List<SubjectOption>> = _subjects
+
+    private fun subjectKey(l: Lesson): String = l.subjectName.orEmpty()
+
+    /** Single place that replaces the loaded lessons, so the subject choices stay in sync. */
+    private fun setLessons(lessons: List<Lesson>) {
+        lastLessons = lessons
+        val style = repository.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.SUBJECT)
+        _subjects.value = lessons.groupBy { subjectKey(it) }
+            .map { (key, entries) -> SubjectOption(key, entries.first().displaySubject(style.long, style.shortInParens)) }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    /** Applies the subject filter (empty = all subjects) and re-renders from the loaded lessons. */
+    fun setSubjectFilter(keys: Set<String>) {
+        _subjectFilter.value = keys
+        if (lastLessons.isNotEmpty() || _state.value is UiState.Success) {
+            _state.value = UiState.Success(group(lastLessons, _groupMode.value))
+        }
+    }
+
     private val _refreshing = MutableStateFlow(false)
     /** True only during a user-initiated pull-to-refresh (automatic reloads stay invisible). */
     val refreshing: StateFlow<Boolean> = _refreshing
@@ -76,7 +107,7 @@ class LessonContentViewModel @Inject constructor(
     private suspend fun reloadFromCache() {
         val cached = repository.peekTeachingContentEntries(_windowDays.value)
         if (cached.isNullOrEmpty() || cached == lastLessons) return
-        lastLessons = cached
+        setLessons(cached)
         _state.value = UiState.Success(group(cached, _groupMode.value))
     }
 
@@ -93,14 +124,14 @@ class LessonContentViewModel @Inject constructor(
             if (userInitiated) _refreshing.value = true
             try {
                 if (contextChanged || _state.value !is UiState.Success) {
-                    if (contextChanged) { lastEntryCount = -1; lastLessons = emptyList(); _canLoadMore.value = true }
+                    if (contextChanged) { lastEntryCount = -1; setLessons(emptyList()); _canLoadMore.value = true }
                     val cached = repository.peekTeachingContentEntries(_windowDays.value)
                     // An EMPTY cache says nothing yet (everything cached may be older than the window):
                     // keep the spinner until the refresh answers instead of flashing "no content".
                     if (!cached.isNullOrEmpty()) {
                         // Deliberately leaves lastEntryCount/canLoadMore alone: a cached list
                         // says nothing about whether widening the window finds more.
-                        lastLessons = cached
+                        setLessons(cached)
                         _state.value = UiState.Success(group(cached, _groupMode.value))
                     } else _state.value = UiState.Loading
                 }
@@ -151,12 +182,14 @@ class LessonContentViewModel @Inject constructor(
         _canLoadMore.value = days < MAX_WINDOW_DAYS &&
             (lastEntryCount == -1 || lessons.size > lastEntryCount)
         lastEntryCount = lessons.size
-        lastLessons = lessons
+        setLessons(lessons)
 
         _state.value = UiState.Success(group(lessons, _groupMode.value))
     }
 
-    private fun group(lessons: List<Lesson>, mode: SessionManager.LessonContentGroupMode): List<ContentGroup> {
+    private fun group(allLessons: List<Lesson>, mode: SessionManager.LessonContentGroupMode): List<ContentGroup> {
+        val filter = _subjectFilter.value
+        val lessons = if (filter.isEmpty()) allLessons else allLessons.filter { subjectKey(it) in filter }
         val subjectStyle = repository.sessionManager.nameStyle(
             com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.SUBJECT)
         return if (mode == SessionManager.LessonContentGroupMode.BY_SUBJECT) {

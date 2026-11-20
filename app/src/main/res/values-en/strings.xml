@@ -257,6 +257,19 @@
     <string name="lesson_content_load_more">Load more days</string>
     <string name="lesson_content_group_by_day">Day</string>
     <string name="lesson_content_group_by_subject">Subject</string>
+    <string name="lesson_content_filter_title">Filter subjects</string>
+    <string name="lesson_content_filter_all">All subjects</string>
+    <string name="lesson_content_filter_count">%1$d subjects</string>
+    <string name="lesson_content_filter_clear">Show all</string>
+    <string name="lesson_content_filter_empty">No lesson content for the selected subjects</string>
+    <string name="lesson_content_share">Share</string>
+    <string name="lesson_content_share_chooser">Send to</string>
+    <string name="lesson_content_nothing_to_share">Nothing to share</string>
+    <string name="lesson_content_export_filter">Subjects: %1$s</string>
+    <plurals name="lesson_content_export_title">
+        <item quantity="one">Lesson content – last day</item>
+        <item quantity="other">Lesson content – last %d days</item>
+    </plurals>
     <string name="lesson_content_empty">No lesson content in the selected period</string>
     <string name="settings_lesson_content_days_label">Lesson content: default period</string>
 

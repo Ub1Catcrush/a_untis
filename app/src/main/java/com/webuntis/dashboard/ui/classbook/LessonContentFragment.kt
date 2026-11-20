@@ -50,6 +50,21 @@ class LessonContentFragment : Fragment() {
         }
         binding.btnLoadMore.setOnClickListener { viewModel.loadMoreDays() }
         binding.btnToggleGroupMode.setOnClickListener { viewModel.toggleGroupMode() }
+        binding.btnFilterSubject.setOnClickListener { showSubjectFilterDialog() }
+        binding.btnShare.setOnClickListener { shareCurrentList() }
+
+        // Filter button label: "Alle Fächer" / the one chosen subject / "<n> Fächer".
+        viewLifecycleOwner.lifecycleScope.launch {
+            kotlinx.coroutines.flow.combine(viewModel.subjectFilter, viewModel.subjects) { f, s -> f to s }
+                .collect { (filter, subjects) ->
+                    binding.btnFilterSubject.text = when {
+                        filter.isEmpty() -> getString(R.string.lesson_content_filter_all)
+                        filter.size == 1 -> subjects.firstOrNull { it.key == filter.first() }?.label
+                            ?: getString(R.string.lesson_content_filter_count, 1)
+                        else -> getString(R.string.lesson_content_filter_count, filter.size)
+                    }
+                }
+        }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.state.collect { state ->
@@ -66,7 +81,9 @@ class LessonContentFragment : Fragment() {
                         if (state.data.isEmpty()) {
                             binding.recyclerView.isVisible = false
                             binding.emptyView.isVisible = true
-                            binding.emptyView.text = getString(R.string.lesson_content_empty)
+                            binding.emptyView.text = getString(
+                                if (viewModel.subjectFilter.value.isNotEmpty()) R.string.lesson_content_filter_empty
+                                else R.string.lesson_content_empty)
                             binding.btnLoadMore.isVisible = viewModel.canLoadMore.value
                         } else {
                             binding.recyclerView.isVisible = true
@@ -111,6 +128,66 @@ class LessonContentFragment : Fragment() {
                 (viewModel.state.value as? UiState.Success)?.let { adapter.submitGroups(it.data, mode) }
             }
         }
+    }
+
+    /** Multi-select of the subjects present in the loaded data; nothing selected = no filter. */
+    private fun showSubjectFilterDialog() {
+        val options = viewModel.subjects.value
+        if (options.isEmpty()) return
+        val selected = viewModel.subjectFilter.value
+        val checked = BooleanArray(options.size) { options[it].key in selected }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.lesson_content_filter_title)
+            .setMultiChoiceItems(options.map { it.label }.toTypedArray(), checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                viewModel.setSubjectFilter(options.filterIndexed { i, _ -> checked[i] }.map { it.key }.toSet())
+            }
+            .setNeutralButton(R.string.lesson_content_filter_clear) { _, _ -> viewModel.setSubjectFilter(emptySet()) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** "Senden an": exports exactly what is on screen (current filter and grouping) as plain text. */
+    private fun shareCurrentList() {
+        val groups = (viewModel.state.value as? UiState.Success)?.data?.takeIf { it.isNotEmpty() }
+        if (groups == null) {
+            android.widget.Toast.makeText(requireContext(), R.string.lesson_content_nothing_to_share, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val mode = viewModel.groupMode.value
+        val subjectStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.SUBJECT)
+        val teacherStyle = viewModel.sessionManager.nameStyle(
+            com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.TEACHER)
+        val days = viewModel.windowDays.value
+        val title = resources.getQuantityString(R.plurals.lesson_content_export_title, days, days)
+        val filter = viewModel.subjectFilter.value
+        val filterLabels = viewModel.subjects.value.filter { it.key in filter }.joinToString(", ") { it.label }
+
+        val text = buildString {
+            appendLine(title)
+            if (filter.isNotEmpty() && filterLabels.isNotBlank()) appendLine(getString(R.string.lesson_content_export_filter, filterLabels))
+            groups.forEach { group ->
+                appendLine()
+                appendLine("${group.header} (${group.entries.size})")
+                group.entries.forEach { e ->
+                    // Same leading label as on screen: the one that is NOT already the group header.
+                    val lead = if (mode == SessionManager.LessonContentGroupMode.BY_DAY)
+                        e.displaySubject(subjectStyle.long, subjectStyle.shortInParens) else e.dateFormatted
+                    val teacher = e.displayTeachers(teacherStyle.long, teacherStyle.shortInParens)
+                    append("• ").append(lead).append(": ").append(e.teachingContent.orEmpty().trim())
+                    if (teacher.isNotBlank()) append(" (").append(teacher).append(")")
+                    appendLine()
+                }
+            }
+        }.trimEnd()
+
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_SUBJECT, title)
+            putExtra(android.content.Intent.EXTRA_TEXT, text)
+        }
+        startActivity(android.content.Intent.createChooser(send, getString(R.string.lesson_content_share_chooser)))
     }
 
     override fun onDestroyView() {

@@ -256,6 +256,19 @@
     <string name="lesson_content_load_more">Weitere Tage laden</string>
     <string name="lesson_content_group_by_day">Tag</string>
     <string name="lesson_content_group_by_subject">Fach</string>
+    <string name="lesson_content_filter_title">Fächer filtern</string>
+    <string name="lesson_content_filter_all">Alle Fächer</string>
+    <string name="lesson_content_filter_count">%1$d Fächer</string>
+    <string name="lesson_content_filter_clear">Alle anzeigen</string>
+    <string name="lesson_content_filter_empty">Keine Unterrichtsinhalte für die gewählten Fächer</string>
+    <string name="lesson_content_share">Teilen</string>
+    <string name="lesson_content_share_chooser">Senden an</string>
+    <string name="lesson_content_nothing_to_share">Nichts zu teilen</string>
+    <string name="lesson_content_export_filter">Fächer: %1$s</string>
+    <plurals name="lesson_content_export_title">
+        <item quantity="one">Unterrichtsinhalte – letzter Tag</item>
+        <item quantity="other">Unterrichtsinhalte – letzte %d Tage</item>
+    </plurals>
     <string name="lesson_content_empty">Keine Unterrichtsinhalte im gewählten Zeitraum</string>
     <string name="settings_lesson_content_days_label">Unterrichtsinhalte: Standard-Zeitraum</string>
 
