@@ -51,6 +51,12 @@
     <string name="label_school_holiday">School holiday</string>
     <string name="label_school_holiday_subtitle">No school days scheduled in the next 7 days.</string>
     <string name="dialog_absence_period_hint">Quick Select Hours</string>
+    <string name="label_day_not_allowed">🔒 The server provides no data for this day (access locked).</string>
+    <string name="label_week_not_allowed">🔒 locked</string>
+    <plurals name="lesson_content_blocked_hint">
+        <item quantity="one">🔒 The server provides no data for %d school day in this period (locked).</item>
+        <item quantity="other">🔒 The server provides no data for %d school days in this period (locked).</item>
+    </plurals>
     <string name="label_no_lessons_today">No lessons today 🎉</string>
     <string name="label_no_lessons_tomorrow">No lessons tomorrow 🎉</string>
     <string name="label_no_lessons_generic">No lessons 🎉</string>

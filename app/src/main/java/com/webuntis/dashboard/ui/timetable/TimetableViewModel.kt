@@ -49,7 +49,8 @@ data class LessonGroup(val lessons: List<Lesson>) {
 data class SchoolDay(val day: TimetableDay) {
     val date: LocalDate get() = day.date
     val lessons: List<Lesson> get() = day.lessons
-    val tabLabel: String get() = day.label
+    val tabLabel: String get() = if (day.notAllowed) day.label + " 🔒" else day.label
+    val notAllowed: Boolean get() = day.notAllowed
 
     /**
      * Groups lessons that should be displayed side-by-side.

@@ -1029,6 +1029,7 @@ class WebUntisRepository @Inject constructor(
             )
             val raw = rawBody(response) ?: return Result.success(emptyList())
             val ttResp: TimetableV1Response = parseJson(raw)
+            recordNotAllowed(resourceType, ttResp)
             cacheOwnClassNameIfNeeded(ttResp)
             val lessons = ttResp.toLessons(sessionManager.session?.className)
             val enriched = enrichLessonsWithDetail(lessons, elementId, elementType, anchorDate, anchorRangeEnd, maxEnrich)
@@ -1104,13 +1105,19 @@ class WebUntisRepository @Inject constructor(
             strictOverlay = haveGoodData, modeSnapshot = modeSnap, ruleSnapshot = ruleSnap)
         if (rangeResult.isFailure) return@withCacheOrFetch Result.failure(rangeResult.exceptionOrNull()!!)
         feedTeachingCache(rangeResult.getOrThrow())
-        val byDate = rangeResult.getOrThrow()
-            .groupBy { it.date }.entries
-            .filter { (d, _) -> !untisIntToDate(d).isBefore(today) && untisIntToDate(d).dayOfWeek.value <= 5 }
-            .sortedBy { it.key }.take(numDays)
-            .map { (d, lessons) ->
-                val merged = mergeLessonsForCurrentView(lessons)
-                TimetableDay(untisIntToDate(d), merged.sortedBy { it.startTime })
+        val lessonsByDate = rangeResult.getOrThrow().groupBy { it.date }
+        val rangeEnd = today.plusDays(fetchDays)
+        val blockedDates = blockedDatesFor(modeSnap).filter { d ->
+            val date = untisIntToDate(d)
+            d !in lessonsByDate && !date.isBefore(today) && !date.isAfter(rangeEnd)
+        }
+        val byDate = (lessonsByDate.keys + blockedDates)
+            .filter { d -> !untisIntToDate(d).isBefore(today) && untisIntToDate(d).dayOfWeek.value <= 5 }
+            .sorted().take(numDays)
+            .map { d ->
+                val lessons = lessonsByDate[d].orEmpty()
+                TimetableDay(untisIntToDate(d), mergeLessonsForCurrentView(lessons).sortedBy { it.startTime },
+                    notAllowed = lessons.isEmpty())
             }
         Result.success(byDate)
     }
@@ -1148,15 +1155,19 @@ class WebUntisRepository @Inject constructor(
         if (rangeResult.isFailure) return Result.failure(rangeResult.exceptionOrNull()!!)
         feedTeachingCache(rangeResult.getOrThrow())
 
-        val allSchoolDays = rangeResult.getOrThrow()
-            .groupBy { it.date }.entries
-            .filter { (d, lessons) ->
-                val date = untisIntToDate(d)
-                date.dayOfWeek.value <= 5 && lessons.isNotEmpty()
-            }
-            .sortedBy { it.key }
-            .map { (d, lessons) ->
-                TimetableDay(untisIntToDate(d), mergeLessonsForCurrentView(lessons).sortedBy { it.startTime })
+        val lessonsByDate = rangeResult.getOrThrow().groupBy { it.date }.filterValues { it.isNotEmpty() }
+        // Days the server withholds (NOT_ALLOWED) are real pages with a notice, not gaps to skip over.
+        val blockedDates = blockedDatesFor(sessionManager.timetableViewMode).filter { d ->
+            val date = untisIntToDate(d)
+            d !in lessonsByDate && !date.isBefore(windowStart) && !date.isAfter(windowEnd)
+        }
+        val allSchoolDays = (lessonsByDate.keys + blockedDates)
+            .filter { d -> untisIntToDate(d).dayOfWeek.value <= 5 }
+            .sorted()
+            .map { d ->
+                val lessons = lessonsByDate[d].orEmpty()
+                TimetableDay(untisIntToDate(d), mergeLessonsForCurrentView(lessons).sortedBy { it.startTime },
+                    notAllowed = lessons.isEmpty())
             }
 
         // Find the index of the first day >= anchorDate
@@ -1164,6 +1175,61 @@ class WebUntisRepository @Inject constructor(
             .takeIf { it >= 0 } ?: return Result.success(emptyList())
 
         return Result.success(allSchoolDays.drop(startIdx).take(numDays))
+    }
+
+    // ─── NOT_ALLOWED days ─────────────────────────────────────────────────────
+    // The timetable API answers days that are deliberately withheld (e.g. older data that was
+    // locked) with status "NOT_ALLOWED" and no entries. That must not look like "no lessons":
+    // remember those dates per account and resource type (persisted, so cached screens show it
+    // too) and flag the affected days in the UI.
+    private val blockedDatesByScope = mutableMapOf<String, MutableMap<String, MutableSet<Int>>>()
+    private fun blockedPersistType() = object : TypeToken<Map<String, List<Int>>>() {}.type
+
+    private fun blockedRegistry(): MutableMap<String, MutableSet<Int>> = synchronized(blockedDatesByScope) {
+        blockedDatesByScope.getOrPut(currentAccountScope()) {
+            val loaded = runCatching {
+                diskCache.read<Map<String, List<Int>>>(diskKey("blocked_dates"), blockedPersistType())?.second
+            }.getOrNull()
+            loaded?.mapValues { it.value.toMutableSet() }?.toMutableMap() ?: mutableMapOf()
+        }
+    }
+
+    /** Updates the remembered blocked dates from one timetable response (for [resourceType]). */
+    private fun recordNotAllowed(resourceType: String, resp: TimetableV1Response) {
+        val days = resp.days ?: return
+        fun dateInt(s: String?) = s?.replace("-", "")?.toIntOrNull()
+        val seen = days.mapNotNull { dateInt(it.date) }.toSet()
+        if (seen.isEmpty()) return
+        val blocked = days.filter { it.isNotAllowed }.mapNotNull { dateInt(it.date) }.toSet()
+        val registry = blockedRegistry()
+        val key = diskKey("blocked_dates")
+        val snapshot: Map<String, List<Int>>? = synchronized(registry) {
+            val set = registry.getOrPut(resourceType) { mutableSetOf() }
+            val before = set.toSet()
+            set.removeAll(seen)      // a day that is answered normally again is no longer blocked
+            set.addAll(blocked)
+            if (set == before) null else registry.mapValues { it.value.toList() }
+        }
+        if (snapshot != null) persistScope.launch { diskCache.write(key, System.currentTimeMillis(), snapshot) }
+    }
+
+    /** Dates the server withholds in [mode]'s view (class view: CLASS resource; otherwise the personal one). */
+    private fun blockedDatesFor(mode: SessionManager.TimetableViewMode): Set<Int> {
+        val registry = blockedRegistry()
+        return synchronized(registry) {
+            if (mode == SessionManager.TimetableViewMode.CLASS) registry["CLASS"].orEmpty().toSet()
+            else registry.filterKeys { it != "CLASS" }.values.flatten().toSet()
+        }
+    }
+
+    /** Number of school days (Mon–Fri) among the last [days] days up to today that the server withholds. */
+    suspend fun blockedWeekdayCount(days: Int): Int = withContext(Dispatchers.IO) {
+        val today = LocalDate.now()
+        val from = today.minusDays((days - 1).toLong().coerceAtLeast(0))
+        blockedDatesFor(sessionManager.timetableViewMode).count { d ->
+            val date = untisIntToDate(d)
+            date.dayOfWeek.value <= 5 && !date.isBefore(from) && !date.isAfter(today)
+        }
     }
 
     private fun untisIntToDate(d: Int): LocalDate {
@@ -2692,7 +2758,8 @@ class WebUntisRepository @Inject constructor(
     }
 }
 
-data class TimetableDay(val date: LocalDate, val lessons: List<Lesson>) {
+/** [notAllowed]: the server answered this day with status NOT_ALLOWED — data is deliberately unavailable. */
+data class TimetableDay(val date: LocalDate, val lessons: List<Lesson>, val notAllowed: Boolean = false) {
     val isToday: Boolean    get() = date == LocalDate.now()
     val isTomorrow: Boolean get() = date == LocalDate.now().plusDays(1)
     val label: String get() = when { isToday -> "Heute"; isTomorrow -> "Morgen"; else -> date.format(DateTimeFormatter.ofPattern("EEE dd.MM.", java.util.Locale.GERMAN)) }

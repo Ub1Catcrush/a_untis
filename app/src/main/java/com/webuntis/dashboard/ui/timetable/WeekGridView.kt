@@ -289,6 +289,17 @@ class WeekGridView @JvmOverloads constructor(
 
         val isPastDay = day.date.isBefore(LocalDate.now())
 
+        if (day.notAllowed) {
+            // Server withholds this day: say so instead of showing an empty (= "no lessons") column.
+            lessonsContainer.addView(TextView(context).apply {
+                text = context.getString(R.string.label_week_not_allowed)
+                gravity = Gravity.CENTER_HORIZONTAL
+                textSize = 11f
+                setTextColor(ContextCompat.getColor(context, R.color.on_surface_variant))
+                setPadding((4 * density).roundToInt(), (12 * density).roundToInt(), (4 * density).roundToInt(), 0)
+            }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        }
+
         for (group in day.groupedLessons) {
             val groupStartMin = minutesOf(group.startTime)
             val groupEndMin = minutesOf(group.endTime)

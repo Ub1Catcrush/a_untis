@@ -279,8 +279,13 @@ data class TimetableV1Day(
     // resolving Lesson.toLesson()'s `ownClassName`, since it's the class actually being
     // viewed, not just the logged-in student's own homeroom.
     val resourceType: String? = null,
-    val resource: TimetableV1Resource? = null
-)
+    val resource: TimetableV1Resource? = null,
+    // "NOT_ALLOWED" = the server deliberately withholds this day (e.g. older data was locked):
+    // an empty day with this status is NOT a day without lessons.
+    val status: String? = null
+) {
+    val isNotAllowed: Boolean get() = status.equals("NOT_ALLOWED", ignoreCase = true)
+}
 
 data class TimetableV1Resource(
     val id: Int? = null,

@@ -53,6 +53,13 @@ class LessonContentFragment : Fragment() {
         binding.btnFilterSubject.setOnClickListener { showSubjectFilterDialog() }
         binding.btnShare.setOnClickListener { shareCurrentList() }
 
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.blockedDays.collect { n ->
+                binding.textBlockedHint.isVisible = n > 0
+                if (n > 0) binding.textBlockedHint.text = resources.getQuantityString(R.plurals.lesson_content_blocked_hint, n, n)
+            }
+        }
+
         // Filter button label: "Alle Fächer" / the one chosen subject / "<n> Fächer".
         viewLifecycleOwner.lifecycleScope.launch {
             kotlinx.coroutines.flow.combine(viewModel.subjectFilter, viewModel.subjects) { f, s -> f to s }

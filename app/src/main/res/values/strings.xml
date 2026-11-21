@@ -48,6 +48,12 @@
     <string name="label_today">Zur aktuellen Woche</string>
     <string name="label_tomorrow">Morgen</string>
     <string name="label_day_fallback">Tag %d</string>
+    <string name="label_day_not_allowed">🔒 Für diesen Tag stellt der Server keine Daten bereit (Zugriff gesperrt).</string>
+    <string name="label_week_not_allowed">🔒 gesperrt</string>
+    <plurals name="lesson_content_blocked_hint">
+        <item quantity="one">🔒 Für %d Schultag im Zeitraum stellt der Server keine Daten bereit (gesperrt).</item>
+        <item quantity="other">🔒 Für %d Schultage im Zeitraum stellt der Server keine Daten bereit (gesperrt).</item>
+    </plurals>
     <string name="label_no_lessons_today">Heute keine Stunden 🎉</string>
     <string name="label_school_holiday">Schulfrei / Ferien</string>
     <string name="label_school_holiday_subtitle">In den nächsten 7 Tagen sind keine Schultage geplant.</string>

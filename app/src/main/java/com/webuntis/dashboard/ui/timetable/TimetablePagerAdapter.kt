@@ -123,7 +123,9 @@ class DayFragment : Fragment() {
                             if (day == null || day.lessons.isEmpty()) {
                                 binding.recyclerView.isVisible = false
                                 binding.emptyView.isVisible = true
-                                binding.emptyView.text = getString(R.string.label_no_lessons_today)
+                                binding.emptyView.text = getString(
+                                    if (day?.notAllowed == true) R.string.label_day_not_allowed
+                                    else R.string.label_no_lessons_today)
                                 binding.timeIndicator.isVisible = false
                                 isTodayFragment = false
                             } else {

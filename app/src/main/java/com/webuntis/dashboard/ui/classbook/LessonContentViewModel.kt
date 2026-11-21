@@ -72,9 +72,18 @@ class LessonContentViewModel @Inject constructor(
 
     private fun subjectKey(l: Lesson): String = l.subjectName.orEmpty()
 
+    /** School days in the current window the server deliberately withholds (status NOT_ALLOWED). */
+    private val _blockedDays = MutableStateFlow(0)
+    val blockedDays: StateFlow<Int> = _blockedDays
+
+    private fun refreshBlockedDays() {
+        viewModelScope.launch { _blockedDays.value = repository.blockedWeekdayCount(_windowDays.value) }
+    }
+
     /** Single place that replaces the loaded lessons, so the subject choices stay in sync. */
     private fun setLessons(lessons: List<Lesson>) {
         lastLessons = lessons
+        refreshBlockedDays()
         val style = repository.sessionManager.nameStyle(
             com.webuntis.dashboard.model.NameScreen.LESSON_CONTENT, com.webuntis.dashboard.model.NameType.SUBJECT)
         _subjects.value = lessons.groupBy { subjectKey(it) }
