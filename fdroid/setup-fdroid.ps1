@@ -372,6 +372,19 @@ if (-not $LocalOnly) {
     $null = Get-NativeOutput 'git' @('fetch', 'origin', '--tags', '--quiet') $RepoRoot
 }
 $tagLocal = Get-NativeOutput 'git' @('rev-parse', '--verify', '--quiet', "refs/tags/$Tag") $RepoRoot
+if (-not $tagLocal -and -not $LocalOnly) {
+    # The release workflow / GitHub release creates the tag on GitHub only. Look there explicitly
+    # (the generic fetch above hides errors and can miss it) before offering to create a new tag.
+    $remoteTagLine = Get-NativeOutput 'git' @('ls-remote', '--tags', 'origin', "refs/tags/$Tag") $RepoRoot
+    if ($remoteTagLine) {
+        Write-Info "Tag $Tag exists on GitHub (release) - fetching it."
+        $null = Test-Native 'git' @('fetch', 'origin', "+refs/tags/${Tag}:refs/tags/${Tag}") $RepoRoot
+        $tagLocal = Get-NativeOutput 'git' @('rev-parse', '--verify', '--quiet', "refs/tags/$Tag") $RepoRoot
+    } elseif (Test-Cmd 'gh') {
+        $relTag = Get-NativeOutput 'gh' @('release', 'view', $Tag, '--json', 'tagName', '--jq', '.tagName') $RepoRoot
+        if ($relTag) { Write-Warn2 "A GitHub release '$Tag' exists but the tag is not visible via git (draft release? publish it first). Not creating a second tag." }
+    }
+}
 if (-not $tagLocal) {
     Write-Info "Tag $Tag does not exist yet."
     if (Confirm-Action "Create tag $Tag on the current commit?") {
@@ -429,7 +442,7 @@ if (-not (Test-Path (Join-Path $fdData '.git'))) {
     Write-Info 'Opening the GitLab fork page. Fork fdroid/fdroiddata as a PUBLIC project under your account.'
     try { Start-Process 'https://gitlab.com/fdroid/fdroiddata/-/forks/new' } catch { Write-Info 'Open https://gitlab.com/fdroid/fdroiddata/-/forks/new manually.' }
     if (-not $Yes) { [void](Read-Host '  Press Enter when the fork exists') }
-    Invoke-Native 'git' @('clone', '--depth=1', "https://gitlab.com/$GitLabUser/fdroiddata.git", $fdData)
+    Invoke-Native 'git' @('-c', 'core.autocrlf=false', 'clone', '--depth=1', "https://gitlab.com/$GitLabUser/fdroiddata.git", $fdData)
 }
 $remotes = @(Get-NativeOutput 'git' @('remote') $fdData)
 if ($remotes -notcontains 'upstream') { Invoke-Native 'git' @('remote', 'add', 'upstream', 'https://gitlab.com/fdroid/fdroiddata.git') $fdData }
@@ -445,8 +458,16 @@ Write-Ok "Recipe copied to fdroiddata\metadata\${AppId}.yml (branch $Branch)"
 if ($SkipBuild) {
     Write-Info 'Container build skipped (-SkipBuild): the GitLab CI pipeline of your fork will lint and build after the push.'
 } else {
+    # Windows git (core.autocrlf=true) checks scripts out with CRLF -> "env: 'python3\r': No such file".
+    # Clone with LF endings, and repair an existing clone that already has CRLF.
+    $fdroidExe = Join-Path $fdServer 'fdroid'
+    if ((Test-Path $fdroidExe) -and ((Read-TextFile $fdroidExe) -match "`r`n")) {
+        Write-Info 'fdroidserver clone has Windows line endings - re-cloning with LF.'
+        Remove-Item -Recurse -Force $fdServer
+    }
     if (-not (Test-Path (Join-Path $fdServer '.git'))) {
-        Invoke-Native 'git' @('clone', '--depth=1', 'https://gitlab.com/fdroid/fdroidserver', $fdServer)
+        Invoke-Native 'git' @('-c', 'core.autocrlf=false', 'clone', '--depth=1', 'https://gitlab.com/fdroid/fdroidserver', $fdServer)
+        Invoke-Native 'git' @('config', 'core.autocrlf', 'false') $fdServer
     }
     # The commands of F-Droid's "Submitting to F-Droid Quick Start Guide" (Test the metadata).
     $check = @'
