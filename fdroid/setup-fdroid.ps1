@@ -447,11 +447,10 @@ if (-not (Test-Path (Join-Path $fdData '.git'))) {
 $remotes = @(Get-NativeOutput 'git' @('remote') $fdData)
 if ($remotes -notcontains 'upstream') { Invoke-Native 'git' @('remote', 'add', 'upstream', 'https://gitlab.com/fdroid/fdroiddata.git') $fdData }
 Invoke-Native 'git' @('fetch', '--depth=1', 'upstream', 'master') $fdData
-if (Get-NativeOutput 'git' @('rev-parse', '--verify', '--quiet', "refs/heads/$Branch") $fdData) {
-    Invoke-Native 'git' @('checkout', $Branch) $fdData
-} else {
-    Invoke-Native 'git' @('checkout', '-B', $Branch, 'upstream/master') $fdData
-}
+# Always rebuild the branch from the CURRENT upstream/master. The branch only carries the single
+# "New App" commit, which is recreated below from the recipe in this repo. A stale branch would
+# carry old srclibs/ etc. and fail the checks of the (newer) fdroidserver.
+Invoke-Native 'git' @('checkout', '-f', '-B', $Branch, 'upstream/master') $fdData
 # Make sure the working tree has LF endings (an older clone made with core.autocrlf=true has CRLF,
 # which makes 'fdroid readmeta' fail with "Invalid srclib metadata ... new-line-at-end-of-file").
 Invoke-Native 'git' @('config', 'core.autocrlf', 'false') $fdData
@@ -526,7 +525,7 @@ if (-not (Test-Native 'git' @('diff', '--cached', '--quiet') $fdData)) {
 $pushed = $false
 if ($NoPush) { Write-Info 'GitLab push skipped (-NoPush).' }
 elseif (Confirm-Action "Push branch '$Branch' to your fork (gitlab.com/$GitLabUser/fdroiddata)?") {
-    Invoke-Native 'git' @('push', '-u', 'origin', $Branch) $fdData
+    Invoke-Native 'git' @('push', '-u', '--force-with-lease', 'origin', $Branch) $fdData
     $pushed = $true
     Write-Ok 'Pushed'
 }
