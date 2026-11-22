@@ -490,6 +490,15 @@ cd /build
 # Only the local working tree is touched; nothing of this is committed.
 for f in srclibs/*.yml; do
   sed -i 's/\r$//' "$f" || true
+  # Git symlinks (e.g. MozAndroidComponentsAS.yml -> MozAndroidComponents.yml) are checked out by
+  # Windows git as small text files that only contain the target name: replace them by a copy of the target.
+  if [ ! -L "$f" ] && [ "$(wc -l < "$f")" -le 1 ] && [ "$(wc -c < "$f")" -lt 120 ]; then
+    target="$(tr -d '\r\n' < "$f")"
+    if [ -n "$target" ] && [ -f "$(dirname "$f")/$target" ] && [ "$target" != "$(basename "$f")" ]; then
+      echo "restoring symlink $f -> $target"
+      cp -f "$(dirname "$f")/$target" "$f" || true
+    fi
+  fi
   if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then echo >> "$f" || true; fi
 done
 echo "srclib probe (tail of MozAndroidComponentsAS.yml):"; od -c srclibs/MozAndroidComponentsAS.yml 2>/dev/null | tail -3 || true
