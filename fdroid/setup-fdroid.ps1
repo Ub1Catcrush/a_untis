@@ -486,6 +486,13 @@ set -e
 export PATH="$fdroidserver:$PATH" PYTHONPATH="$fdroidserver"
 export JAVA_HOME=$(java -XshowSettings:properties -version 2>&1 > /dev/null | grep 'java.home' | awk -F'=' '{print $2}' | tr -d ' ')
 cd /build
+# Sanitize srclibs (CRLF from a Windows checkout / missing final newline) so the strict yaml check passes.
+# Only the local working tree is touched; nothing of this is committed.
+for f in srclibs/*.yml; do
+  sed -i 's/\r$//' "$f" || true
+  if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then echo >> "$f" || true; fi
+done
+echo "srclib probe (tail of MozAndroidComponentsAS.yml):"; od -c srclibs/MozAndroidComponentsAS.yml 2>/dev/null | tail -3 || true
 fdroid readmeta
 fdroid rewritemeta __APPID__
 fdroid checkupdates --allow-dirty __APPID__ || echo "checkupdates reported problems (expected: versionCode is computed in Gradle, so auto-update stays off)"
