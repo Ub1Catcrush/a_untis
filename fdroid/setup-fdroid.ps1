@@ -485,6 +485,8 @@ set -e
 . /etc/profile
 export PATH="$fdroidserver:$PATH" PYTHONPATH="$fdroidserver"
 export JAVA_HOME=$(java -XshowSettings:properties -version 2>&1 > /dev/null | grep 'java.home' | awk -F'=' '{print $2}' | tr -d ' ')
+# The mounted folders belong to another uid: allow git to use them ("detected dubious ownership").
+git config --global --add safe.directory '*' || true
 # The Windows bind mount (/build) does not allow chmod/utime (rewritemeta, git clone in build/ fail with
 # "Operation not permitted"), so work on a Linux-native copy and copy only the recipe back at the end.
 rm -rf /tmp/work; mkdir -p /tmp/work
