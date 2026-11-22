@@ -452,7 +452,17 @@ if (Get-NativeOutput 'git' @('rev-parse', '--verify', '--quiet', "refs/heads/$Br
 } else {
     Invoke-Native 'git' @('checkout', '-B', $Branch, 'upstream/master') $fdData
 }
-Copy-Item -Path $RecipePath -Destination (Join-Path $fdData "metadata/${AppId}.yml") -Force
+# Make sure the working tree has LF endings (an older clone made with core.autocrlf=true has CRLF,
+# which makes 'fdroid readmeta' fail with "Invalid srclib metadata ... new-line-at-end-of-file").
+Invoke-Native 'git' @('config', 'core.autocrlf', 'false') $fdData
+$crlfProbe = Join-Path $fdData 'srclibs/MozAndroidComponentsAS.yml'
+if ((Test-Path $crlfProbe) -and ((Read-TextFile $crlfProbe) -match "`r`n")) {
+    Write-Info 'fdroiddata working tree has Windows line endings - re-checking out with LF.'
+    Invoke-Native 'git' @('rm', '-r', '--cached', '-q', '.') $fdData
+    Invoke-Native 'git' @('reset', '--hard', '-q') $fdData
+}
+$recipeLf = (Read-TextFile $RecipePath) -replace "`r`n", "`n"
+Write-TextFile (Join-Path $fdData "metadata/${AppId}.yml") $recipeLf
 Write-Ok "Recipe copied to fdroiddata\metadata\${AppId}.yml (branch $Branch)"
 
 if ($SkipBuild) {
