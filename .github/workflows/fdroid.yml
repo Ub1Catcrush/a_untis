@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, e.g. v0.5.7 (empty = latest releases only, no new wait)"
+        description: "Release tag to publish, e.g. v0.7.5 (empty = latest releases only, no new wait)"
         required: false
         type: string
 

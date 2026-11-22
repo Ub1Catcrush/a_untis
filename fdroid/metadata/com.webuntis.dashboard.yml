@@ -7,6 +7,9 @@
 #  2. Own F-Droid repository: .github/workflows/fdroid.yml uses this file as-is (the Builds section
 #     is ignored there; the already-signed release APKs are published instead).
 #
+# fdroid/setup-fdroid.bat keeps this file in sync with dependencies.gradle (Builds, CurrentVersion*)
+# and prepares the fdroiddata merge request - see docs/FDROID.md.
+#
 # Store texts (title, descriptions, screenshots, changelogs) come from
 # fastlane/metadata/android/<locale>/ in this repository, so they are not repeated here.
 
@@ -30,9 +33,9 @@ RepoType: git
 Repo: https://github.com/Ub1Catcrush/a_untis.git
 
 Builds:
-  - versionName: 0.5.7
-    versionCode: 50007
-    commit: v0.5.7
+  - versionName: 0.7.5
+    versionCode: 70005
+    commit: v0.7.5
     subdir: app
     gradle:
       - yes
@@ -48,5 +51,5 @@ Builds:
 UpdateCheckMode: Tags
 AutoUpdateMode: None
 
-CurrentVersion: 0.5.7
-CurrentVersionCode: 50007
+CurrentVersion: 0.7.5
+CurrentVersionCode: 70005

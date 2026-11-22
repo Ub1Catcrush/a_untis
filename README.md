@@ -140,7 +140,7 @@ Optimiert für moderne Android-Versionen (Ziel-SDK 37). Enthält spezifische Fix
 
 ### F-Droid
 
-Store-Metadaten (`fastlane/`), Build-Rezept (`fdroid/metadata/`) und ein GitHub-Workflow, der ein eigenes F-Droid-Repository auf GitHub Pages veröffentlicht, sind enthalten – Einrichtung siehe [docs/FDROID.md](docs/FDROID.md).
+Store-Metadaten (`fastlane/`), Build-Rezept (`fdroid/metadata/`) und ein GitHub-Workflow, der ein eigenes F-Droid-Repository auf GitHub Pages veröffentlicht, sind enthalten – Einrichtung siehe [docs/FDROID.md](docs/FDROID.md). `fdroid\setup-fdroid.bat` führt alle automatisierbaren Schritte bis zum fertigen Merge Request aus.
 
 ---
 
@@ -276,4 +276,4 @@ Optimised for modern Android versions (target SDK 37). Includes specific fixes f
 
 ### F-Droid
 
-Store metadata (`fastlane/`), the build recipe (`fdroid/metadata/`) and a GitHub workflow that publishes your own F-Droid repository to GitHub Pages are included – see [docs/FDROID.md](docs/FDROID.md) for setup.
+Store metadata (`fastlane/`), the build recipe (`fdroid/metadata/`) and a GitHub workflow that publishes your own F-Droid repository to GitHub Pages are included – see [docs/FDROID.md](docs/FDROID.md) for setup. `fdroid\setup-fdroid.bat` runs every automatable step up to a ready-to-submit merge request.

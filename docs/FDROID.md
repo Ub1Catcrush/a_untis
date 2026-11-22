@@ -1,5 +1,43 @@
 # F-Droid
 
+## Quick path: `fdroid/setup-fdroid.bat`
+
+One script does every automatable step for the **current version** (read from
+`dependencies.gradle`, now 0.7.5 / versionCode 70005) and is safe to re-run after every release.
+Double-click `fdroid\setup-fdroid.bat` or run it from a terminal:
+
+```bat
+fdroid\setup-fdroid.bat -GitLabUser <your-gitlab-name>
+```
+
+What it does (details in the header of `fdroid/setup-fdroid.ps1`):
+
+1. reads version / versionCode / tag from `dependencies.gradle`;
+2. checks the tools (git, Docker Desktop) and offers to install missing ones with winget;
+3. checks the repository against the F-Droid rules (license, store-text lengths, no proprietary
+   libraries, the `REQUEST_INSTALL_PACKAGES` line the recipe patches, F-Droid switch in Gradle);
+4. updates `fdroid/metadata/com.webuntis.dashboard.yml` (new `Builds:` entry, `CurrentVersion*`);
+5. creates `fastlane/metadata/android/<locale>/changelogs/<versionCode>.txt` from the git history
+   if it is missing (max. 500 bytes - edit it if you like);
+6. commits the F-Droid files, makes sure the tag `vX.Y.Z` exists / is pushed and that **the tag**
+   (which is what F-Droid builds) contains the F-Droid switch;
+7. prepares your fdroiddata fork (branch `com.webuntis.dashboard`), runs `fdroid readmeta`,
+   `rewritemeta`, `checkupdates`, `lint` and `build -v -l` in F-Droid's official build-server
+   container, commits `New App: com.webuntis.dashboard` and pushes the branch;
+8. prints and copies the merge-request title/description and opens the MR page;
+9. with `-SetupOwnRepo`: creates the key of your own F-Droid repository and sets the four
+   GitHub secrets (see section 1).
+
+Useful switches: `-LocalOnly` (only steps 1-6, no network), `-SkipBuild` (let the GitLab CI of
+your fork build instead of the local container), `-NoPush`, `-KeepOldBuilds`, `-Yes`.
+Needs Windows PowerShell 5.1+ (or PowerShell 7), Git and - unless `-SkipBuild` - Docker Desktop.
+
+Manual by nature: forking `fdroid/fdroiddata` on GitLab (the script opens the page; the fork must
+be **public** and the branch not protected), clicking *Create merge request* (target
+`fdroid/fdroiddata`, branch `master`, title `New app: A*Untis`) and answering the reviewers.
+
+---
+
 There are two independent ways to get A*Untis into F-Droid. You can use either or both.
 
 | | Own repository (automated) | Official f-droid.org (manual submission) |
@@ -44,7 +82,7 @@ index with `fdroidserver`, signs the index and publishes it to GitHub Pages:
    | `FDROID_KEY_ALIAS` | `fdroid-repo` |
 
 3. **Run the release workflow once** (or *Actions → Publish F-Droid repository → Run workflow*
-   with a tag such as `v0.5.7`). This creates the `gh-pages` branch.
+   with a tag such as `v0.7.5`). This creates the `gh-pages` branch.
 4. **Enable GitHub Pages**: Settings → Pages → Source: *Deploy from a branch* → `gh-pages` / `/ (root)`.
 5. **Add the repo in the F-Droid app**: Settings → Repositories → **+**, enter
    `https://<owner>.github.io/<repo>/fdroid/repo`. Or open the same URL on the phone and tap
@@ -63,7 +101,7 @@ index with `fdroidserver`, signs the index and publishes it to GitHub Pages:
   "What's Changed" text from `generate_release_notes`), converted to plain text and cut to 500 bytes.
 - Only releases tagged `vX.Y.Z` (not drafts/pre-releases) are included. The APK file name is
   `com.webuntis.dashboard_<versionCode>.apk` where
-  `versionCode = major*1000000 + minor*10000 + patch` (0.5.7 → 50007).
+  `versionCode = major*1000000 + minor*10000 + patch` (0.7.5 → 70005).
 - To publish a specific tag manually: *Actions → Publish F-Droid repository → Run workflow*.
 
 ---
@@ -79,7 +117,7 @@ What is already prepared in this repository:
   F-Droid picks these up automatically. There are no per-version changelog files: the recipe's
   `Changelog:` field links to the GitHub releases page instead.
 - `fdroid/metadata/com.webuntis.dashboard.yml` – the build recipe (license, categories,
-  anti-feature `NonFreeNet`, build at tag `v0.5.7`).
+  anti-feature `NonFreeNet`, build at tag `v0.7.5`).
 - `app/build.gradle.kts` – with `fdroid=true`: the in-app GitHub updater is disabled
   (`BuildConfig.SELF_UPDATE = false`, F-Droid delivers updates), ABI splits are off and the
   dependency-info blob is removed. The recipe also strips `REQUEST_INSTALL_PACKAGES`.
@@ -105,6 +143,11 @@ Steps:
 
 ### Things to know before submitting
 
+- **Permissions in the F-Droid build**: besides the normal ones the app declares
+  `SCHEDULE_EXACT_ALARM` and `RECEIVE_BOOT_COMPLETED` (fixed-time background check, notification
+  scheduling after a reboot). `REQUEST_INSTALL_PACKAGES` is removed by the recipe because only the
+  GitHub self-updater needs it. Reviewers may ask why the app wakes itself up; the answer is the
+  optional, user-configurable check for timetable changes.
 - **License**: `LICENCE` is the GPL-3.0 text, so the recipe says `GPL-3.0-only`. Change it to
   `GPL-3.0-or-later` if that is what you intend.
 - **Anti-feature `NonFreeNet`**: the app only works with WebUntis, a proprietary service.

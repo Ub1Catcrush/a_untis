@@ -1,0 +1,9 @@
+- Gesperrte Tage kenntlich machen
+- Filter und Export von Unterrichtsinhalten
+- Cache und Load von Unterrichtsinhalten verbessert
+- Neue Notification f├╝r Termine Planung von Check alle 15 Minuten m├Âglich Caching ├╝berarbeitet
+- Improve NOTIFICATION INTENT
+- Aktualisieren von dependencies.gradle
+- FIX NOTIFICATION INTENT
+- Optimierung der Pausenanzeige in der Tagesansicht Icon Anpassung f├╝r versch. Launcher
+- Improve caching handling and timed update check
