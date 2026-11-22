@@ -485,7 +485,12 @@ set -e
 . /etc/profile
 export PATH="$fdroidserver:$PATH" PYTHONPATH="$fdroidserver"
 export JAVA_HOME=$(java -XshowSettings:properties -version 2>&1 > /dev/null | grep 'java.home' | awk -F'=' '{print $2}' | tr -d ' ')
-cd /build
+# The Windows bind mount (/build) does not allow chmod/utime (rewritemeta, git clone in build/ fail with
+# "Operation not permitted"), so work on a Linux-native copy and copy only the recipe back at the end.
+rm -rf /tmp/work; mkdir -p /tmp/work
+(cd /build && tar cf - --exclude=.git --exclude=.fdroid-setup-check.sh .) | tar xf - -C /tmp/work
+chmod 600 /tmp/work/config.yml 2>/dev/null || true
+cd /tmp/work
 # Sanitize srclibs (CRLF from a Windows checkout / missing final newline) so the strict yaml check passes.
 # Only the local working tree is touched; nothing of this is committed.
 for f in srclibs/*.yml; do
@@ -504,6 +509,7 @@ done
 echo "srclib probe (tail of MozAndroidComponentsAS.yml):"; od -c srclibs/MozAndroidComponentsAS.yml 2>/dev/null | tail -3 || true
 fdroid readmeta
 fdroid rewritemeta __APPID__
+cat /tmp/work/metadata/__APPID__.yml > /build/metadata/__APPID__.yml
 fdroid checkupdates --allow-dirty __APPID__ || echo "checkupdates reported problems (expected: versionCode is computed in Gradle, so auto-update stays off)"
 fdroid lint __APPID__
 fdroid build -v -l __APPID__
