@@ -582,7 +582,50 @@ fdroid lint __APPID__
 fdroid build -v -l __APPID__ 2>&1 | tee /tmp/fdroid-build.log
 # 'fdroid build' exits 0 even when the build failed (scanner errors, Gradle errors): check the log.
 if grep -qE "build failed|Could not build app|Can't build due to" /tmp/fdroid-build.log; then
-  echo "FDROID BUILD FAILED - see the ERROR lines above"; exit 1
+  echo "FDROID BUILD FAILED - see the ERROR lines above"
+  if grep -q "compared built binary to supplied reference binary" /tmp/fdroid-build.log; then
+    echo "=== Reproducibility diagnosis: F-Droid build vs. published a_untis_fdroid.apk ==="
+    BUILT=$(ls /tmp/work/build/__APPID__/app/build/outputs/apk/release/*-unsigned.apk 2>/dev/null | head -1)
+    BINURL=$(grep '^Binaries:' /tmp/work/metadata/__APPID__.yml | sed 's/^Binaries: *//')
+    VN=$(grep -m1 'versionName:' /tmp/work/metadata/__APPID__.yml | sed 's/.*versionName: *//')
+    BINURL=${BINURL//%v/$VN}
+    python3 - "$BUILT" "$BINURL" <<'PY' || true
+import sys, struct, zipfile, hashlib, urllib.request
+built, url = sys.argv[1], sys.argv[2]
+ref = "/tmp/ref.apk"
+urllib.request.urlretrieve(url, ref)
+def info(path):
+    z = zipfile.ZipFile(path); out = {}; order = []
+    for i in z.infolist():
+        z.fp.seek(i.header_offset); h = z.fp.read(30)
+        nl, el = struct.unpack('<HH', h[26:30])
+        z.fp.seek(i.header_offset + 30 + nl + el)
+        data = hashlib.sha1(z.fp.read(i.compress_size)).hexdigest()[:10]
+        out[i.filename] = dict(ctype=i.compress_type, csize=i.compress_size, size=i.file_size, crc=i.CRC,
+                               off=i.header_offset, extra=el, data=data, date=i.date_time, flags=i.flag_bits)
+        order.append(i.filename)
+    return out, order
+a, ao = info(built); b, bo = info(ref)
+print("built:", built); print("ref  :", ref, "(", url, ")")
+print("entries built/ref:", len(a), len(b))
+print("only in built:", [n for n in a if n not in b][:10])
+print("only in ref  :", [n for n in b if n not in a][:10])
+common = [n for n in ao if n in b]
+print("same entry order:", [n for n in ao if n in b] == [n for n in bo if n in a])
+for key, label in (("ctype", "compression method"), ("csize", "compressed size"), ("crc", "CRC (content)"),
+                   ("data", "compressed bytes"), ("extra", "local extra field (alignment padding)"),
+                   ("date", "timestamp"), ("flags", "flags"), ("off", "offset in file")):
+    d = [n for n in common if a[n][key] != b[n][key]]
+    print("%-38s differs in %d entries %s" % (label, len(d), d[:5]))
+print("first 5 differing entries in detail:")
+shown = 0
+for n in common:
+    if any(a[n][k] != b[n][k] for k in ("ctype", "csize", "crc", "data", "extra")):
+        print(" ", n, "built:", a[n], "ref:", b[n]); shown += 1
+        if shown >= 5: break
+PY
+  fi
+  exit 1
 fi
 '@
     $check = ($check.Replace('__APPID__', $AppId)) -replace "`r`n", "`n"
