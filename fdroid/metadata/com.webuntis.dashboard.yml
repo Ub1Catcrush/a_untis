@@ -31,11 +31,13 @@ AutoName: A*Untis
 
 RepoType: git
 Repo: https://github.com/Ub1Catcrush/a_untis.git
+Binaries: https://github.com/Ub1Catcrush/a_untis/releases/download/v%v/a_untis_fdroid.apk
+AllowedAPKSigningKeys: 75c6d7b50fbe16afc20cd0a91949425a9c14d0f7dc4562b2c03826bf257ee508
 
 Builds:
   - versionName: 0.7.8
     versionCode: 70008
-    commit: v0.7.8
+    commit: 2247ba0f5fcb5bd0dfaaca0872094d1469997a32
     subdir: app
     gradle:
       - yes
