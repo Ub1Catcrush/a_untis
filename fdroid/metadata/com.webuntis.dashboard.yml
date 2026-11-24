@@ -51,7 +51,9 @@ Builds:
 # versionCode = major*1000000 + minor*10000 + patch (see dependencies.gradle / app/build.gradle.kts),
 # which F-Droid cannot derive automatically from a tag. Add a new "Builds" entry per release
 # (or ask for a plain versionCode in dependencies.gradle to enable AutoUpdateMode: Version).
-UpdateCheckMode: Tags
+# UpdateCheckMode must stay None: 'Tags' makes 'fdroid checkupdates' (F-Droid CI) fail with
+# "Couldn't find any version information", because it cannot read a Gradle-computed versionCode.
+UpdateCheckMode: None
 AutoUpdateMode: None
 
 CurrentVersion: 0.7.5
