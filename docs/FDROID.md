@@ -3,7 +3,7 @@
 ## Quick path: `fdroid/setup-fdroid.bat`
 
 One script does every automatable step for the **current version** (read from
-`dependencies.gradle`, now 0.7.6 / versionCode 70006) and is safe to re-run after every release.
+`dependencies.gradle`, now 0.7.7 / versionCode 70007) and is safe to re-run after every release.
 Double-click `fdroid\setup-fdroid.bat` or run it from a terminal:
 
 ```bat
@@ -82,7 +82,7 @@ index with `fdroidserver`, signs the index and publishes it to GitHub Pages:
    | `FDROID_KEY_ALIAS` | `fdroid-repo` |
 
 3. **Run the release workflow once** (or *Actions → Publish F-Droid repository → Run workflow*
-   with a tag such as `v0.7.6`). This creates the `gh-pages` branch.
+   with a tag such as `v0.7.7`). This creates the `gh-pages` branch.
 4. **Enable GitHub Pages**: Settings → Pages → Source: *Deploy from a branch* → `gh-pages` / `/ (root)`.
 5. **Add the repo in the F-Droid app**: Settings → Repositories → **+**, enter
    `https://<owner>.github.io/<repo>/fdroid/repo`. Or open the same URL on the phone and tap
@@ -101,7 +101,7 @@ index with `fdroidserver`, signs the index and publishes it to GitHub Pages:
   "What's Changed" text from `generate_release_notes`), converted to plain text and cut to 500 bytes.
 - Only releases tagged `vX.Y.Z` (not drafts/pre-releases) are included. The APK file name is
   `com.webuntis.dashboard_<versionCode>.apk` where
-  `versionCode = major*1000000 + minor*10000 + patch` (0.7.6 → 70006).
+  `versionCode = major*1000000 + minor*10000 + patch` (0.7.7 → 70007).
 - To publish a specific tag manually: *Actions → Publish F-Droid repository → Run workflow*.
 
 ---
@@ -117,7 +117,7 @@ What is already prepared in this repository:
   F-Droid picks these up automatically. There are no per-version changelog files: the recipe's
   `Changelog:` field links to the GitHub releases page instead.
 - `fdroid/metadata/com.webuntis.dashboard.yml` – the build recipe (license, categories,
-  anti-feature `NonFreeNet`, build at tag `v0.7.6`).
+  anti-feature `NonFreeNet`, build at tag `v0.7.7`).
 - `app/build.gradle.kts` – with `fdroid=true`: the in-app GitHub updater is disabled
   (`BuildConfig.SELF_UPDATE = false`, F-Droid delivers updates), ABI splits are off and the
   dependency-info blob is removed. The recipe also strips `REQUEST_INSTALL_PACKAGES`.

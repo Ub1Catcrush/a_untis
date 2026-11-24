@@ -204,6 +204,36 @@ jobs:
 
           ls -l dist
 
+      # Reproducible F-Droid APK: built EXACTLY like the F-Droid build server builds it (see the Builds entry of
+      # fdroid/metadata/com.webuntis.dashboard.yml: fdroid=true, REQUEST_INSTALL_PACKAGES removed, universal APK,
+      # no -PversionName) and signed with the release key. F-Droid compares its own build with this file
+      # (recipe field "Binaries") and then publishes it with YOUR signature.
+      - name: Build and sign the F-Droid APK
+        if: steps.check_tag.outputs.exists != 'true'
+        run: |
+          set -e
+          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          printf '\nfdroid=true\n' >> gradle.properties
+          sed -i '/REQUEST_INSTALL_PACKAGES/d' app/src/main/AndroidManifest.xml
+          ./gradlew clean assembleRelease --stacktrace
+          unsigned=app/build/outputs/apk/release/app-release-unsigned.apk
+          [ -f "$unsigned" ] || { echo "F-Droid APK not found: $unsigned"; ls -l app/build/outputs/apk/release; exit 1; }
+          # AGP already aligns the APK; do NOT change its bytes (F-Droid copies the signature onto its own build).
+          $BUILD_TOOLS_PATH/zipalign -c 4 "$unsigned" || { echo "F-Droid APK is not 4-byte aligned"; exit 1; }
+          $BUILD_TOOLS_PATH/apksigner sign \
+            --ks my-release-key.jks \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            --out dist/a_untis_fdroid.apk \
+            "$unsigned"
+          $BUILD_TOOLS_PATH/apksigner verify --verbose --print-certs dist/a_untis_fdroid.apk
+          git checkout -- gradle.properties app/src/main/AndroidManifest.xml
+
       - name: Upload APKs to Github Artifacts
         if: steps.check_tag.outputs.exists != 'true'
         uses: actions/upload-artifact@v7

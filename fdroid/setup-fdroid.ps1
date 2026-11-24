@@ -279,13 +279,29 @@ foreach ($l in $blockLines) {
 if ($null -ne $cur) { $entries += ,$cur }
 if ($entries.Count -eq 0) { throw "'Builds:' contains no '- versionName:' entry to use as a template." }
 
+# F-Droid wants the FULL commit hash in 'commit:' (not the tag). Resolve it from the local repo or from GitHub.
+$CommitRef = $Tag
+$commitSha = Get-NativeOutput 'git' @('rev-parse', '--verify', '--quiet', "refs/tags/$Tag^{commit}") $RepoRoot
+if (-not $commitSha) {
+    $rn = @(Get-NativeOutput 'git' @('remote') $RepoRoot) | Where-Object { $_ }
+    $rn = @($rn | Sort-Object { if ($_ -eq 'origin') { 0 } else { 1 } })
+    foreach ($r in $rn) {
+        $lr = @(Get-NativeOutput 'git' @('ls-remote', '--tags', $r, "refs/tags/$Tag", "refs/tags/$Tag^{}") $RepoRoot)
+        $peeled = $lr | Where-Object { $_ -match '\^\{\}$' } | Select-Object -First 1
+        $line = if ($peeled) { $peeled } else { $lr | Where-Object { $_ } | Select-Object -First 1 }
+        if ($line) { $commitSha = ($line -split '\s+')[0]; break }
+    }
+}
+if ($commitSha -and ("$commitSha" -match '^[0-9a-f]{40}$')) { $CommitRef = "$commitSha"; Write-Ok "Tag $Tag = commit $CommitRef" }
+else { Write-Warn2 "Could not resolve the commit of tag $Tag - the recipe keeps the tag name, but F-Droid requires the full hash (publish the release first, then run again)." }
+
 $template = @($entries[$entries.Count - 1])
 $newEntry = @()
 foreach ($l in $template) {
     $x = $l
     $x = $x -replace '^(  - versionName:).*$', "`$1 $VersionName"
     $x = $x -replace '^(    versionCode:).*$', "`$1 $VersionCode"
-    $x = $x -replace '^(    commit:).*$', "`$1 $Tag"
+    $x = $x -replace '^(    commit:).*$', "`$1 $CommitRef"
     $newEntry += $x
 }
 
@@ -309,10 +325,41 @@ for ($i = 0; $i -lt $result.Count; $i++) {
     if ($result[$i] -match '^CurrentVersion:')     { $result[$i] = "CurrentVersion: $VersionName" }
     if ($result[$i] -match '^CurrentVersionCode:') { $result[$i] = "CurrentVersionCode: $VersionCode" }
 }
+# Reproducible builds: F-Droid compares its build with the signed APK published in the GitHub release
+# ('Binaries') and then ships that APK with YOUR signature ('AllowedAPKSigningKeys' = its certificate SHA-256).
+# The APK a_untis_fdroid.apk is built by .github/workflows/upload_apk_in_releases.yml for every release.
+$binUrl = "https://github.com/Ub1Catcrush/a_untis/releases/download/v%v/a_untis_fdroid.apk"
+$sigKey = $null
+foreach ($l in $result) { if ($l -match '^AllowedAPKSigningKeys:\s*([0-9a-fA-F]{64})\s*$') { $sigKey = $Matches[1].ToLower() } }
+$apkUrl = "https://github.com/Ub1Catcrush/a_untis/releases/download/$Tag/a_untis_fdroid.apk"
+if (-not $LocalOnly -and (Test-Cmd 'keytool')) {
+    $tmpApk = Join-Path ([IO.Path]::GetTempPath()) "a_untis_fdroid_$VersionName.apk"
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri $apkUrl -OutFile $tmpApk
+        $kt = (& keytool -printcert -jarfile $tmpApk 2>$null) -join "`n"
+        if ($kt -match 'SHA-?256:\s*([0-9A-Fa-f:]{95})') {
+            $newKey = ($Matches[1] -replace ':', '').ToLower()
+            if ($sigKey -and $sigKey -ne $newKey) { Write-Warn2 "The signing certificate of the release APK differs from AllowedAPKSigningKeys in the recipe - updating it." }
+            $sigKey = $newKey
+            Write-Ok "Signing certificate SHA-256 of $Tag/a_untis_fdroid.apk: $sigKey"
+        } else { Write-Warn2 'Could not read the signing certificate from a_untis_fdroid.apk (keytool output unexpected).' }
+    } catch {
+        Write-Warn2 "Could not download $apkUrl - the release must contain a_untis_fdroid.apk (published by the workflow from version 0.7.7 on)."
+    } finally { Remove-Item -Force -ErrorAction SilentlyContinue $tmpApk }
+} elseif (-not $sigKey) { Write-Warn2 'keytool not found (install a JDK): cannot compute AllowedAPKSigningKeys for reproducible builds.' }
+if ($sigKey) {
+    $kept2 = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($l in $result) { if ($l -notmatch '^(Binaries|AllowedAPKSigningKeys):') { $kept2.Add($l) } }
+    $ins = $kept2.FindIndex({ param($z) $z -match '^Repo:' })
+    if ($ins -lt 0) { throw "No 'Repo:' line in the recipe." }
+    $kept2.Insert($ins + 1, "Binaries: $binUrl")
+    $kept2.Insert($ins + 2, "AllowedAPKSigningKeys: $sigKey")
+    $result = $kept2
+} else { Write-Warn2 'Reproducible builds NOT configured in the recipe (no signing key) - F-Droid would sign the APK with its own key.' }
 $newText = (($result -join "`n") + "`n")
 if ($newText -ne ((Read-TextFile $RecipePath) -replace "`r`n", "`n")) {
     Write-TextFile $RecipePath $newText
-    Write-Ok "Recipe updated: Builds -> $VersionName ($VersionCode, commit $Tag), CurrentVersion*"
+    Write-Ok "Recipe updated: Builds -> $VersionName ($VersionCode, commit $CommitRef), CurrentVersion*"
 } else { Write-Ok 'Recipe already up to date' }
 
 # ---------------------------------------------------------------------------------------------

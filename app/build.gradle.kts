@@ -71,6 +71,8 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
+            // Reproducible builds: do not embed git revision / checkout path (META-INF/version-control-info.textproto).
+            vcsInfo.include = false
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

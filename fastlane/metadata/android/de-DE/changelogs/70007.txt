@@ -1,0 +1,1 @@
+Version 0.7.7: reproduzierbarer F-Droid-Build (mit jedem Release wird eine separat signierte F-Droid-APK veröffentlicht).
