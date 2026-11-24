@@ -628,11 +628,33 @@ About the app
 
 $checksLine
 "@
+# F-Droid rejects merge requests that do not use their template ("Merge Request template is not followed").
+# Fetch the CURRENT official template from fdroid/fdroiddata and use it UNCHANGED (checkboxes left for you
+# to tick after reading each item); our own description goes below it.
+try {
+    $tplDir  = Invoke-RestMethod -UseBasicParsing -Uri 'https://gitlab.com/api/v4/projects/fdroid%2Ffdroiddata/repository/tree?path=.gitlab/merge_request_templates&ref=master'
+    $tplFile = @($tplDir | Where-Object { $_.name -match 'app|inclusion|new' } | Select-Object -First 1)[0]
+    if (-not $tplFile) { $tplFile = @($tplDir)[0] }
+    $tplPath = [uri]::EscapeDataString($tplFile.path)
+    $tplText = Invoke-RestMethod -UseBasicParsing -Uri "https://gitlab.com/api/v4/projects/fdroid%2Ffdroiddata/repository/files/$tplPath/raw?ref=master"
+    $tplText = ([string]$tplText).TrimEnd()
+    $aboutStart = $mrBody.IndexOf('About the app')
+    $about = $mrBody.Substring($aboutStart)
+    $mrBody = "$tplText`n`n---`n`n$about"
+    Write-Ok "Using the official template '$($tplFile.name)' (checkboxes are NOT ticked - read each item and tick it yourself)."
+} catch { Write-Warn2 'Could not download the F-Droid merge-request template - on the GitLab MR form, choose the template in the description dropdown and paste the "About the app" text below it.' }
 try { Set-Clipboard -Value $mrBody; Write-Ok 'MR description copied to the clipboard.' } catch { Write-Info 'Clipboard not available - copy the text below.' }
 Write-Host ''
 Write-Host "  Title: $mrTitle" -ForegroundColor White
 Write-Host $mrBody
-$mrUrl = "https://gitlab.com/$GitLabUser/fdroiddata/-/merge_requests/new?merge_request%5Bsource_branch%5D=$Branch"
+# A link with only source_branch gives GitLab a 500 error: add the project ids of the fork (source) and
+# fdroid/fdroiddata (target, 36528) and the target branch.
+$mrUrl = "https://gitlab.com/$GitLabUser/fdroiddata/-/merge_requests/new?merge_request%5Bsource_branch%5D=$Branch&merge_request%5Btarget_branch%5D=master"
+try {
+    $forkInfo = Invoke-RestMethod -Uri "https://gitlab.com/api/v4/projects/$([uri]::EscapeDataString("$GitLabUser/fdroiddata"))" -UseBasicParsing
+    $upInfo   = Invoke-RestMethod -Uri 'https://gitlab.com/api/v4/projects/fdroid%2Ffdroiddata' -UseBasicParsing
+    $mrUrl = "https://gitlab.com/$GitLabUser/fdroiddata/-/merge_requests/new?merge_request%5Bsource_project_id%5D=$($forkInfo.id)&merge_request%5Bsource_branch%5D=$Branch&merge_request%5Btarget_project_id%5D=$($upInfo.id)&merge_request%5Btarget_branch%5D=master"
+} catch { Write-Info 'Could not look up the GitLab project ids; using the short merge-request link.' }
 if ($pushed) {
     Write-Info 'Opening the merge-request page: target must be fdroid/fdroiddata, branch master; paste title + description.'
     try { Start-Process $mrUrl } catch { Write-Info "Open: $mrUrl" }
