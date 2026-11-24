@@ -549,9 +549,31 @@ if (-not (Test-Native 'git' @('diff', '--cached', '--quiet') $fdData)) {
 $pushed = $false
 if ($NoPush) { Write-Info 'GitLab push skipped (-NoPush).' }
 elseif (Confirm-Action "Push branch '$Branch' to your fork (gitlab.com/$GitLabUser/fdroiddata)?") {
-    Invoke-Native 'git' @('push', '-u', '--force-with-lease', 'origin', $Branch) $fdData
+    if (-not (Test-Native 'git' @('push', '-u', '--force-with-lease', 'origin', $Branch) $fdData)) {
+        # "shallow update not allowed": the depth-1 clone sits on an upstream commit that your (older) fork
+        # does not have. Rebuild the branch on top of YOUR FORK's master (GitLab already has that commit, so a
+        # shallow push is accepted): it then holds just the one "New App" commit. The merge request against
+        # fdroid/fdroiddata still shows only that commit, because your fork's master is an ancestor of upstream's.
+        Write-Info 'Push was rejected (shallow clone). Re-basing the New App commit onto your fork''s master and retrying ...'
+        $recipeKeep = Read-TextFile (Join-Path $fdData "metadata/${AppId}.yml")
+        Invoke-Native 'git' @('fetch', '--depth=1', 'origin', 'master') $fdData
+        Invoke-Native 'git' @('checkout', '-f', '-B', $Branch, 'FETCH_HEAD') $fdData
+        Write-TextFile (Join-Path $fdData "metadata/${AppId}.yml") (($recipeKeep) -replace "`r`n", "`n")
+        Invoke-Native 'git' @('add', "metadata/${AppId}.yml") $fdData
+        Invoke-Native 'git' @('commit', '-m', "New App: $AppId") $fdData
+        Invoke-Native 'git' @('push', '-u', '--force', 'origin', $Branch) $fdData
+    }
+    Write-Ok 'Push command finished'
+}
+# Verify on GitLab itself - the merge request form only works when the branch really exists there.
+$remoteHead = Get-NativeOutput 'git' @('ls-remote', '--heads', 'origin', $Branch) $fdData
+if ($remoteHead) {
     $pushed = $true
-    Write-Ok 'Pushed'
+    Write-Ok "Branch '$Branch' exists on GitLab (gitlab.com/$GitLabUser/fdroiddata)"
+} else {
+    Write-Bad "Branch '$Branch' is NOT on GitLab - the merge request cannot be created yet (push was declined or skipped)."
+    Write-Info "Push it manually:  git -C `"$fdData`" push -u --force origin $Branch"
+    $script:Warnings += "Branch $Branch is not on your GitLab fork - push it, then open the merge request."
 }
 
 # ---------------------------------------------------------------------------------------------
