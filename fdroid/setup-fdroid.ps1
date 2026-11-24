@@ -357,6 +357,24 @@ foreach ($loc in $locales) {
 Write-Step '6/9  Commit, release tag and what F-Droid will see'
 if (-not (Test-Native 'git' @('rev-parse', '--is-inside-work-tree') $RepoRoot)) { throw "$RepoRoot is not a git repository." }
 
+# Which remote is the GitHub repository? Normally 'origin', but a local repo may have none or another name.
+$GhRemote = 'origin'
+if (-not $LocalOnly) {
+    $remoteNames = @(Get-NativeOutput 'git' @('remote') $RepoRoot) | Where-Object { $_ }
+    if ($remoteNames -notcontains 'origin') {
+        $ghNamed = $remoteNames | Where-Object { (Get-NativeOutput 'git' @('remote', 'get-url', $_) $RepoRoot) -match 'github\.com' } | Select-Object -First 1
+        if ($ghNamed) { $GhRemote = $ghNamed; Write-Info "No remote 'origin' - using GitHub remote '$GhRemote'." }
+        else {
+            $ghUrl = 'https://github.com/Ub1Catcrush/a_untis.git'
+            Write-Warn2 "This repository has no GitHub remote ('git remote -v' is empty or points elsewhere)."
+            if (Confirm-Action "Add remote 'origin' = $ghUrl ?") {
+                Invoke-Native 'git' @('remote', 'add', 'origin', $ghUrl) $RepoRoot
+                Write-Ok "Added remote origin -> $ghUrl"
+            } else { Write-Warn2 'No remote: tag/push checks against GitHub are skipped.'; $LocalOnly = $true }
+        }
+    }
+}
+
 Invoke-Native 'git' @('add', '--', 'fdroid', 'fastlane', 'docs') $RepoRoot
 if (-not (Test-Native 'git' @('diff', '--cached', '--quiet') $RepoRoot)) {
     if (Confirm-Action 'Commit the updated F-Droid files (fdroid/, fastlane/, docs/)?') {
@@ -369,16 +387,16 @@ $dirty = Get-NativeOutput 'git' @('status', '--porcelain') $RepoRoot
 if ($dirty) { Write-Warn2 'There are other uncommitted changes - they are NOT part of any tag or push.' }
 
 if (-not $LocalOnly) {
-    $null = Get-NativeOutput 'git' @('fetch', 'origin', '--tags', '--quiet') $RepoRoot
+    $null = Get-NativeOutput 'git' @('fetch', $GhRemote, '--tags', '--quiet') $RepoRoot
 }
 $tagLocal = Get-NativeOutput 'git' @('rev-parse', '--verify', '--quiet', "refs/tags/$Tag") $RepoRoot
 if (-not $tagLocal -and -not $LocalOnly) {
     # The release workflow / GitHub release creates the tag on GitHub only. Look there explicitly
     # (the generic fetch above hides errors and can miss it) before offering to create a new tag.
-    $remoteTagLine = Get-NativeOutput 'git' @('ls-remote', '--tags', 'origin', "refs/tags/$Tag") $RepoRoot
+    $remoteTagLine = Get-NativeOutput 'git' @('ls-remote', '--tags', $GhRemote, "refs/tags/$Tag") $RepoRoot
     if ($remoteTagLine) {
         Write-Info "Tag $Tag exists on GitHub (release) - fetching it."
-        $null = Test-Native 'git' @('fetch', 'origin', "+refs/tags/${Tag}:refs/tags/${Tag}") $RepoRoot
+        $null = Test-Native 'git' @('fetch', $GhRemote, "+refs/tags/${Tag}:refs/tags/${Tag}") $RepoRoot
         $tagLocal = Get-NativeOutput 'git' @('rev-parse', '--verify', '--quiet', "refs/tags/$Tag") $RepoRoot
     } elseif (Test-Cmd 'gh') {
         $relTag = Get-NativeOutput 'gh' @('release', 'view', $Tag, '--json', 'tagName', '--jq', '.tagName') $RepoRoot
@@ -411,10 +429,10 @@ if ($tagLocal) {
 if (-not $LocalOnly -and -not $NoPush) {
     $branchName = (Get-NativeOutput 'git' @('rev-parse', '--abbrev-ref', 'HEAD') $RepoRoot)
     if (Confirm-Action "Push branch '$branchName' and tag '$Tag' to GitHub (origin)?") {
-        Invoke-Native 'git' @('push', 'origin', 'HEAD') $RepoRoot
+        Invoke-Native 'git' @('push', $GhRemote, 'HEAD') $RepoRoot
         if ($tagLocal) {
-            $remoteTag = Get-NativeOutput 'git' @('ls-remote', '--tags', 'origin', "refs/tags/$Tag") $RepoRoot
-            if (-not $remoteTag) { Invoke-Native 'git' @('push', 'origin', $Tag) $RepoRoot }
+            $remoteTag = Get-NativeOutput 'git' @('ls-remote', '--tags', $GhRemote, "refs/tags/$Tag") $RepoRoot
+            if (-not $remoteTag) { Invoke-Native 'git' @('push', $GhRemote, $Tag) $RepoRoot }
             else { Write-Ok "Tag $Tag already on GitHub" }
         }
     }
