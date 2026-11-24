@@ -1,0 +1,1 @@
+Version 0.7.6: Release für F-Droid vorbereitet (der Build nutzt das Toolchain-Download-Plugin nicht mehr).

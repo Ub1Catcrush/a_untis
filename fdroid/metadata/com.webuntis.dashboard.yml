@@ -33,9 +33,9 @@ RepoType: git
 Repo: https://github.com/Ub1Catcrush/a_untis.git
 
 Builds:
-  - versionName: 0.7.5
-    versionCode: 70005
-    commit: v0.7.5
+  - versionName: 0.7.6
+    versionCode: 70006
+    commit: v0.7.6
     subdir: app
     gradle:
       - yes
@@ -44,9 +44,6 @@ Builds:
       - printf '\nfdroid=true\n' >> ../gradle.properties
       # ... and drop the permission that only the self-updater needs.
       - sed -i '/REQUEST_INSTALL_PACKAGES/d' src/main/AndroidManifest.xml
-      # F-Droid's scanner rejects the foojay toolchain auto-download plugin (it fetches JDKs from the
-      # network); the app compiles with the build server's JDK 17+, so remove it for the F-Droid build.
-      - sed -i '/foojay-resolver/d' ../settings.gradle.kts
 
 # versionCode = major*1000000 + minor*10000 + patch (see dependencies.gradle / app/build.gradle.kts),
 # which F-Droid cannot derive automatically from a tag. Add a new "Builds" entry per release
@@ -56,5 +53,5 @@ Builds:
 UpdateCheckMode: None
 AutoUpdateMode: None
 
-CurrentVersion: 0.7.5
-CurrentVersionCode: 70005
+CurrentVersion: 0.7.6
+CurrentVersionCode: 70006
