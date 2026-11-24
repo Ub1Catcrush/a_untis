@@ -1,0 +1,1 @@
+Version 0.7.8: the F-Droid APK keeps its exact build layout when signed, so F-Droid can verify it.

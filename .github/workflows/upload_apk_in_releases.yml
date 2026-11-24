@@ -220,6 +220,14 @@ jobs:
           [ -f "$unsigned" ] || { echo "F-Droid APK not found: $unsigned"; ls -l app/build/outputs/apk/release; exit 1; }
           # AGP already aligns the APK; do NOT change its bytes (F-Droid copies the signature onto its own build).
           $BUILD_TOOLS_PATH/zipalign -c 4 "$unsigned" || { echo "F-Droid APK is not 4-byte aligned"; exit 1; }
+          # apksigner re-aligns APK entries by default, which changes the ZIP layout and makes F-Droid's
+          # signature copy fail ("CHUNKED_SHA256 digest mismatch"). Keep AGP's layout exactly as it is.
+          ALIGN_OPT=""
+          if $BUILD_TOOLS_PATH/apksigner sign --help 2>&1 | grep -q -- "--alignment-preserved"; then
+            ALIGN_OPT="--alignment-preserved true"
+          else
+            echo "WARNING: this apksigner has no --alignment-preserved option"
+          fi
           $BUILD_TOOLS_PATH/apksigner sign \
             --ks my-release-key.jks \
             --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
@@ -229,9 +237,15 @@ jobs:
             --v2-signing-enabled true \
             --v3-signing-enabled true \
             --v4-signing-enabled false \
+            $ALIGN_OPT \
             --out dist/a_untis_fdroid.apk \
             "$unsigned"
           $BUILD_TOOLS_PATH/apksigner verify --verbose --print-certs dist/a_untis_fdroid.apk
+          # Same check F-Droid does: copy the signature onto the unsigned build and verify. Fails HERE (before the
+          # release is created) if the signed APK could not be reproduced by F-Droid.
+          pip install --quiet apksigcopier
+          apksigcopier copy dist/a_untis_fdroid.apk "$unsigned" /tmp/sigcopied.apk
+          $BUILD_TOOLS_PATH/apksigner verify /tmp/sigcopied.apk || { echo "Signature copy check FAILED: the signed APK differs structurally from the unsigned build"; exit 1; }
           git checkout -- gradle.properties app/src/main/AndroidManifest.xml
 
       - name: Upload APKs to Github Artifacts
