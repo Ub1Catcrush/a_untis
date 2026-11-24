@@ -532,7 +532,11 @@ fdroid rewritemeta __APPID__
 cat /tmp/work/metadata/__APPID__.yml > /build/metadata/__APPID__.yml
 fdroid checkupdates --allow-dirty __APPID__ || echo "checkupdates reported problems (expected: versionCode is computed in Gradle, so auto-update stays off)"
 fdroid lint __APPID__
-fdroid build -v -l __APPID__
+fdroid build -v -l __APPID__ 2>&1 | tee /tmp/fdroid-build.log
+# 'fdroid build' exits 0 even when the build failed (scanner errors, Gradle errors): check the log.
+if grep -qE "build failed|Could not build app|Can't build due to" /tmp/fdroid-build.log; then
+  echo "FDROID BUILD FAILED - see the ERROR lines above"; exit 1
+fi
 '@
     $check = ($check.Replace('__APPID__', $AppId)) -replace "`r`n", "`n"
     $helper = Join-Path $fdData '.fdroid-setup-check.sh'
